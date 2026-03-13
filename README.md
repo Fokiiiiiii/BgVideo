@@ -8,7 +8,7 @@ BgVideo allows you to use a video as your Discord background, replacing the stat
 
 - Play a looping video behind the Discord UI
 - Lightweight implementation
-- Supports common formats like `mp4` and `webm`
+- Supports common formats like `mp4`
 - Built-in settings UI for quick configuration
 
 ## Settings
