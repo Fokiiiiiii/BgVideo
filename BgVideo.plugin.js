@@ -2,7 +2,9 @@
  * @name BgVideo
  * @author Foki
  * @description Loop an MP4 as a background video
- * @version 1.5.1
+ * @version 1.0.0
+ * @source https://github.com/Fokiiiiiii/BgVideo
+ * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
 
 module.exports = class BgVideo {
