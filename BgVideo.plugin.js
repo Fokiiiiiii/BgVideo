@@ -1,8 +1,10 @@
 /**
  * @name BgVideo
  * @author Foki
- * @description Loop an MP4 as a background video
- * @version 1.5.1
+ * @description Loop an MP4/WebM as a background video
+ * @version 1.0.0
+ * @source https://github.com/Fokiiiiiii/BgVideo
+ * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
 
 module.exports = class BgVideo {
@@ -13,38 +15,37 @@ module.exports = class BgVideo {
     this.defaults = {
       url: "https://raw.githubusercontent.com/Fokiiiiiii/disocrd-Thema/main/Grievous_Lady_2.5_.mp4",
       debug: false,
-
       opacity: 0.3,
       blur: 1.2,
       saturate: 1.08,
       brightness: 0.88,
-
-      // New
       respectReducedMotion: true,
       autoRecover: true,
-      stallThresholdSec: 8, // how long video can be "stuck" before recovery attempts
-      maxBlobMB: 80, // blob fallback hard limit
+      stallThresholdSec: 8,
+      maxBlobMB: 80,
     };
 
     this.settings = this.loadSettings();
 
     this._video = null;
     this._blobUrl = null;
+    this._blobCacheUrl = "";
+    this._blobCacheBlobUrl = null;
 
     this._onVisibility = null;
-
-    // Reduced motion listener
     this._motionQuery = null;
     this._onMotionChange = null;
 
-    // Health monitor
     this._healthTimer = null;
     this._lastTime = 0;
     this._lastWall = 0;
     this._stuckForMs = 0;
     this._recovering = false;
+    this._onHealthVisibility = null;
+    this._saveTimer = null;
+    this._cssText = "";
+    this._panelCssMounted = false;
 
-    // Stall state flags (helps reduce false positives)
     this._stallFlag = false;
   }
 
@@ -53,9 +54,62 @@ module.exports = class BgVideo {
     return { ...this.defaults, ...(saved || {}) };
   }
 
-  saveSettings(next) {
+  saveSettings(next, opts = {}) {
+    const { persist = true } = opts;
+    if (!next || typeof next !== "object") return false;
+
+    const keys = Object.keys(next);
+    if (keys.length === 0) return false;
+
+    let changed = false;
+    for (const k of keys) {
+      if (this.settings[k] !== next[k]) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return false;
+
     this.settings = { ...this.settings, ...next };
+    if (persist) {
+      if (this._saveTimer) {
+        clearTimeout(this._saveTimer);
+        this._saveTimer = null;
+      }
+      BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
+    }
+    return true;
+  }
+
+  scheduleSettingsSave(delayMs = 180) {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
+    }, Math.max(0, Number(delayMs) || 0));
+  }
+
+  flushSettingsSave() {
+    if (!this._saveTimer) return;
+    clearTimeout(this._saveTimer);
+    this._saveTimer = null;
     BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
+  }
+
+  isVisualSettingsChanged(prev, next) {
+    return (
+      prev.opacity !== next.opacity ||
+      prev.blur !== next.blur ||
+      prev.saturate !== next.saturate ||
+      prev.brightness !== next.brightness
+    );
+  }
+
+  isPlaybackSettingsChanged(prev, next) {
+    return (
+      prev.url !== next.url ||
+      prev.respectReducedMotion !== next.respectReducedMotion
+    );
   }
 
   log(...args) {
@@ -77,18 +131,38 @@ module.exports = class BgVideo {
     }
   }
 
-  isMp4Likely(u) {
-    // UI hint only. Lots of hosts hide extensions.
-    return /\.mp4(\?|#|$)/i.test(u);
+  getLikelyVideoExt(u) {
+    const m = String(u || "").match(/\.(mp4|webm)(\?|#|$)/i);
+    return m ? String(m[1]).toLowerCase() : "";
   }
 
-  revokeBlob() {
+  guessVideoMime(u) {
+    const ext = this.getLikelyVideoExt(u);
+    if (ext === "webm") return "video/webm";
+    if (ext === "mp4") return "video/mp4";
+    return "";
+  }
+
+  revokeBlob(keepCache = false) {
     if (this._blobUrl) {
+      const keepThis =
+        !!keepCache &&
+        !!this._blobCacheBlobUrl &&
+        this._blobUrl === this._blobCacheBlobUrl;
       try {
-        URL.revokeObjectURL(this._blobUrl);
+        if (!keepThis) URL.revokeObjectURL(this._blobUrl);
       } catch {}
       this._blobUrl = null;
     }
+  }
+
+  clearBlobCache() {
+    if (!this._blobCacheBlobUrl) return;
+    try {
+      URL.revokeObjectURL(this._blobCacheBlobUrl);
+    } catch {}
+    this._blobCacheBlobUrl = null;
+    this._blobCacheUrl = "";
   }
 
   shouldReduceMotion() {
@@ -123,7 +197,6 @@ module.exports = class BgVideo {
       if (typeof this._motionQuery.addEventListener === "function") {
         this._motionQuery.addEventListener("change", this._onMotionChange);
       } else if (typeof this._motionQuery.addListener === "function") {
-        // legacy
         this._motionQuery.addListener(this._onMotionChange);
       }
     } catch (e) {
@@ -154,7 +227,7 @@ module.exports = class BgVideo {
     this._lastWall = performance.now();
     this._stuckForMs = 0;
 
-    const intervalMs = 2000;
+    const intervalMs = 3000;
 
     this._healthTimer = setInterval(() => {
       const v = this._video;
@@ -167,36 +240,24 @@ module.exports = class BgVideo {
       const wallDelta = Math.max(0, now - (this._lastWall || now));
       this._lastWall = now;
 
-      // If it isn't meant to be playing, don't fight the user/browser.
-      const shouldBePlaying = true;
-
-      // If it's paused unexpectedly, try to resume
-      if (shouldBePlaying && v.paused) {
+      if (v.paused) {
         v.play().catch(() => {});
         return;
       }
 
       const t = Number(v.currentTime) || 0;
 
-      // IMPORTANT: looping resets currentTime -> 0.
-      // Treat wrap-around as "advanced" to avoid false stuck detection.
       const prev = Number(this._lastTime) || 0;
-      const looped = (t + 0.5) < prev; // small tolerance
+      const looped = (t + 0.5) < prev;
       const advanced = looped || (t > (prev + 0.05));
       this._lastTime = t;
 
-      // Consider "stuck" when:
-      // - It isn't advancing AND
-      // - It's actively waiting/stalled OR can't maintain playback readiness
-      // Keep this conservative to avoid false positives.
       const looksStuck =
         !advanced &&
         !v.paused &&
         (
           this._stallFlag ||
-          v.readyState < 2 || // HAVE_CURRENT_DATA未満ならかなり怪しい
-          v.networkState === v.NETWORK_LOADING ||
-          v.seeking === true
+          v.readyState < 2
         );
 
       if (looksStuck) {
@@ -221,6 +282,27 @@ module.exports = class BgVideo {
     }
   }
 
+  attachHealthVisibilityHandler() {
+    if (this._onHealthVisibility) return;
+
+    this._onHealthVisibility = () => {
+      if (document.hidden) {
+        this.stopHealthMonitor();
+      } else {
+        this.startHealthMonitor();
+      }
+    };
+
+    document.addEventListener("visibilitychange", this._onHealthVisibility);
+    this._onHealthVisibility();
+  }
+
+  detachHealthVisibilityHandler() {
+    if (!this._onHealthVisibility) return;
+    document.removeEventListener("visibilitychange", this._onHealthVisibility);
+    this._onHealthVisibility = null;
+  }
+
   async recoverPlayback() {
     const v = this._video;
     if (!v || this._recovering) return;
@@ -230,7 +312,6 @@ module.exports = class BgVideo {
       this.toast("recover: attempting", "warning");
       this.log("Recovery attempt start");
 
-      // First attempt: reload the same source
       try {
         v.load();
         await v.play();
@@ -241,7 +322,6 @@ module.exports = class BgVideo {
         this.log("Recovery load/play failed:", e1);
       }
 
-      // Second attempt: re-apply settings (may switch to blob fallback)
       await this.applyVideoSettings({ forceReload: true });
       this.toast("recover: ok(reapply)", "success");
       this.log("Recovery ok via reapply");
@@ -254,7 +334,7 @@ module.exports = class BgVideo {
   }
 
   start() {
-    BdApi.DOM.addStyle(this.PLUGIN_NAME, this.buildCss());
+    this.refreshCss(true);
 
     const existing = document.getElementById("bgVideo");
     if (existing) {
@@ -262,7 +342,7 @@ module.exports = class BgVideo {
       this.applyVideoSettings();
       this.attachVisibilityHandler();
       this.attachReducedMotionHandler();
-      this.startHealthMonitor();
+      this.attachHealthVisibilityHandler();
       return;
     }
 
@@ -282,7 +362,6 @@ module.exports = class BgVideo {
     v.crossOrigin = "anonymous";
     v.setAttribute("aria-hidden", "true");
 
-    // Stall flags to reduce false positives in monitor
     const setStall = (on) => { this._stallFlag = !!on; };
 
     v.addEventListener("error", () => {
@@ -301,7 +380,6 @@ module.exports = class BgVideo {
     });
 
     v.addEventListener("canplay", () => {
-      // canplay usually indicates we can recover from waiting
       setStall(false);
       this.toast("canplay", "success");
     });
@@ -311,32 +389,30 @@ module.exports = class BgVideo {
       this.toast("playing", "success");
     });
 
-    v.addEventListener("seeked", () => {
-      // seeking can be transient; don't keep a stale stall flag
-      setStall(false);
-    });
-
     mount.prepend(v);
 
     this.applyVideoSettings();
     this.attachVisibilityHandler();
     this.attachReducedMotionHandler();
-    this.startHealthMonitor();
+    this.attachHealthVisibilityHandler();
   }
 
   stop() {
+    this.flushSettingsSave();
+
     if (this._onVisibility) {
       document.removeEventListener("visibilitychange", this._onVisibility);
-      window.removeEventListener("focus", this._onVisibility);
-      window.removeEventListener("blur", this._onVisibility);
       this._onVisibility = null;
     }
 
     this.detachReducedMotionHandler();
+    this.detachHealthVisibilityHandler();
     this.stopHealthMonitor();
 
     BdApi.DOM.removeStyle(this.PLUGIN_NAME);
     BdApi.DOM.removeStyle(this.PANEL_STYLE_ID);
+    this._cssText = "";
+    this._panelCssMounted = false;
 
     const v = document.getElementById("bgVideo");
     if (v) {
@@ -348,13 +424,18 @@ module.exports = class BgVideo {
 
     this._video = null;
     this._stallFlag = false;
-    this.revokeBlob();
+    this.revokeBlob(true);
+    this.clearBlobCache();
   }
 
   buildCss() {
     const s = this.settings;
     return `
       #bgVideo{
+        --bgv-opacity: ${s.opacity};
+        --bgv-blur: ${s.blur}px;
+        --bgv-saturate: ${s.saturate};
+        --bgv-brightness: ${s.brightness};
         position: fixed;
         inset: 0;
         width: 100vw;
@@ -362,17 +443,23 @@ module.exports = class BgVideo {
         object-fit: cover;
         pointer-events: none;
         z-index: 0;
-        opacity: ${s.opacity};
-        filter: blur(${s.blur}px) saturate(${s.saturate}) brightness(${s.brightness});
+        opacity: var(--bgv-opacity);
+        filter: blur(var(--bgv-blur)) saturate(var(--bgv-saturate)) brightness(var(--bgv-brightness));
+        transform: translate3d(0,0,0);
+        will-change: transform, opacity, filter;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
       }
-      /* Do NOT force z-index on app-mount (tends to break overlays). */
       #app-mount{ position: relative; }
     `;
   }
 
-  refreshCss() {
-    BdApi.DOM.removeStyle(this.PLUGIN_NAME);
-    BdApi.DOM.addStyle(this.PLUGIN_NAME, this.buildCss());
+  refreshCss(force = false) {
+    const css = this.buildCss();
+    if (!force && css === this._cssText) return false;
+    this._cssText = css;
+    BdApi.DOM.addStyle(this.PLUGIN_NAME, css);
+    return true;
   }
 
   attachVisibilityHandler() {
@@ -382,20 +469,15 @@ module.exports = class BgVideo {
       const vid = this._video;
       if (!vid) return;
 
-      const hasFocus = typeof document.hasFocus === "function" ? document.hasFocus() : true;
-      const inactive = document.hidden || !hasFocus;
-
-      if (inactive || this.shouldReduceMotion()) {
+      if (document.hidden || this.shouldReduceMotion()) {
         if (!vid.paused) vid.pause();
         return;
       }
 
-      // まずは再生を試す
       try {
         await vid.play();
       } catch {}
 
-      // Windows復帰時の黒画面対策：データが無い/寸法ゼロ/止まっているなら強制リロード
       const needsReload =
         vid.readyState < 2 ||
         vid.networkState === vid.NETWORK_NO_SOURCE ||
@@ -408,8 +490,6 @@ module.exports = class BgVideo {
     };
 
     document.addEventListener("visibilitychange", this._onVisibility);
-    window.addEventListener("focus", this._onVisibility);
-    window.addEventListener("blur", this._onVisibility);
     this._onVisibility();
   }
 
@@ -426,26 +506,57 @@ module.exports = class BgVideo {
 
     const reduce = this.shouldReduceMotion();
     const maxBlobBytes = Math.max(1, Number(this.settings.maxBlobMB) || 80) * 1024 * 1024;
+    const guessedMime = this.guessVideoMime(url);
+    const srcAttr = String(v.getAttribute("src") || "");
+    const currentSrc = String(v.currentSrc || "");
+    const usingBlobSrc = !!this._blobUrl && srcAttr === this._blobUrl;
+    const usingDirectSrc = srcAttr === url || currentSrc === url;
 
-    this.revokeBlob();
+    if (this._blobUrl && !usingBlobSrc) {
+      this.revokeBlob(true);
+    }
+
+    if (!opts.forceReload && usingDirectSrc && !reduce && !v.paused && !this._stallFlag) {
+      return;
+    }
+
+    if (!opts.forceReload && (usingDirectSrc || usingBlobSrc)) {
+      this._stallFlag = false;
+
+      if (reduce) {
+        try {
+          v.pause();
+        } catch {}
+        return;
+      }
+
+      try {
+        await v.play();
+      } catch {}
+      return;
+    }
+
+    this.revokeBlob(true);
 
     const fallbackToBlob = async () => {
       try {
         this.toast("fallback(blob) try", "warning");
         this.log("Fallback to blob fetch:", url);
 
-        // Best-effort HEAD to check size (may fail on some hosts)
-        try {
-          const head = await BdApi.Net.fetch(url, { method: "HEAD", timeout: 15000 });
-          if (head?.ok) {
-            const len = Number(head.headers?.get?.("content-length") || 0);
-            if (len && len > maxBlobBytes) {
-              throw new Error(`file too large (${Math.round(len / (1024 * 1024))}MB > ${this.settings.maxBlobMB}MB)`);
-            }
+        if (this._blobCacheBlobUrl && this._blobCacheUrl === url) {
+          this._blobUrl = this._blobCacheBlobUrl;
+          v.src = this._blobUrl;
+          v.load();
+          if (!reduce) {
+            await v.play();
+            this.toast("playing(blob cache)", "success");
+            this.log("Playing via blob cache.");
+          } else {
+            try {
+              v.pause();
+            } catch {}
           }
-        } catch (e) {
-          // Not fatal; proceed to GET, but we still hard-check after download.
-          this.log("HEAD size check skipped/failed:", e);
+          return;
         }
 
         const res = await BdApi.Net.fetch(url, { timeout: 60000 });
@@ -456,9 +567,20 @@ module.exports = class BgVideo {
           throw new Error(`download too large (${Math.round(buf.byteLength / (1024 * 1024))}MB > ${this.settings.maxBlobMB}MB)`);
         }
 
-        const ct = res.headers?.get?.("content-type") || "video/mp4";
+        let ct = String(res.headers?.get?.("content-type") || "").trim();
+        if (!/^video\//i.test(ct)) {
+          ct = guessedMime || "application/octet-stream";
+        }
         const blob = new Blob([buf], { type: ct });
-        this._blobUrl = URL.createObjectURL(blob);
+        const blobUrl = URL.createObjectURL(blob);
+        if (this._blobCacheBlobUrl && this._blobCacheBlobUrl !== blobUrl) {
+          try {
+            URL.revokeObjectURL(this._blobCacheBlobUrl);
+          } catch {}
+        }
+        this._blobCacheUrl = url;
+        this._blobCacheBlobUrl = blobUrl;
+        this._blobUrl = blobUrl;
 
         v.src = this._blobUrl;
         v.load();
@@ -480,7 +602,6 @@ module.exports = class BgVideo {
       }
     };
 
-    // Force reload path: clear src to ensure network stack resets
     if (opts.forceReload) {
       try {
         v.pause();
@@ -489,7 +610,6 @@ module.exports = class BgVideo {
       v.load();
     }
 
-    // Reset stall flags when reloading
     this._stallFlag = false;
 
     v.src = url;
@@ -515,73 +635,127 @@ module.exports = class BgVideo {
   }
 
   getSettingsPanel() {
-    BdApi.DOM.removeStyle(this.PANEL_STYLE_ID);
-    BdApi.DOM.addStyle(
-      this.PANEL_STYLE_ID,
-      `
-      .bgv-wrap{ padding:14px; color: var(--text-normal); }
+    if (!this._panelCssMounted) {
+      BdApi.DOM.addStyle(
+        this.PANEL_STYLE_ID,
+        `
+      .bgv-wrap{padding:14px;color:var(--text-normal)}
       .bgv-card{
-        background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 14px;
-        padding: 14px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-        backdrop-filter: blur(10px);
-        overflow:hidden;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.25);
+      backdrop-filter:blur(10px);
+      max-height:80vh;
+      overflow-y:auto
       }
-      .bgv-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-      .bgv-title{ font-size:16px; font-weight:800; letter-spacing:0.2px; }
-      .bgv-sub{ font-size:12px; opacity:0.7; margin-top:2px; }
-      .bgv-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .bgv-row{ padding: 10px; border-radius: 12px; background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.08); overflow:hidden; }
+      .bgv-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+      .bgv-title{font-size:16px;font-weight:800;letter-spacing:0.2px}
+      .bgv-sub{font-size:12px;opacity:0.7;margin-top:2px}
+      .bgv-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .bgv-row{
+      padding:10px;
+      border-radius:12px;
+      background:rgba(0,0,0,0.18);
+      border:1px solid rgba(255,255,255,0.08);
+      overflow:hidden
+      }
       .bgv-label{
-        font-size:12px; font-weight:700; opacity:0.9; margin-bottom:6px;
-        display:flex; align-items:center; justify-content:space-between; gap:10px;
+      font-size:12px;
+      font-weight:700;
+      opacity:0.9;
+      margin-bottom:6px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px
       }
-      .bgv-label > :first-child{ flex:1; min-width:0; }
-      .bgv-label > :last-child{ flex:0 0 auto; text-align:right; }
+      .bgv-label>:first-child{flex:1;min-width:0}
+      .bgv-label>:last-child{flex:0 0 auto;text-align:right}
       .bgv-input{
-        width:100%; box-sizing:border-box; padding:10px 10px; border-radius:10px;
-        border:1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25);
-        color: var(--text-normal); outline:none;
+      width:100%;
+      box-sizing:border-box;
+      padding:10px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.14);
+      background:rgba(0,0,0,0.25);
+      color:var(--text-normal);
+      outline:none
       }
-      .bgv-input:focus{ border-color: rgba(255,255,255,0.28); }
-      .bgv-urlline{ display:flex; gap:10px; }
+      .bgv-input:focus{border-color:rgba(255,255,255,0.28)}
+      .bgv-urlline{display:flex;gap:10px}
       .bgv-pill{
-        font-size: 11px; padding: 4px 8px; border-radius: 999px;
-        border: 1px solid rgba(255,255,255,0.14);
-        background: rgba(0,0,0,0.22);
-        opacity:0.85;
-        white-space:nowrap;
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.14);
+      background:rgba(0,0,0,0.22);
+      opacity:0.85;
+      white-space:nowrap
       }
-      .bgv-ok{ border-color: rgba(66, 245, 141, 0.35); }
-      .bgv-bad{ border-color: rgba(245, 66, 66, 0.35); }
-      .bgv-controls{ display:flex; gap:10px; align-items:center; }
-      .bgv-toggle{ display:flex; gap:10px; align-items:center; }
-      .bgv-toggle input{ transform: scale(1.05); }
-      .bgv-sliderline{ display:flex; align-items:center; gap:10px; min-width:0; }
-      .bgv-range{ flex: 1; min-width: 0; }
+      .bgv-ok{border-color:rgba(66,245,141,0.35)}
+      .bgv-bad{border-color:rgba(245,66,66,0.35)}
+      .bgv-controls{display:flex;gap:10px;align-items:center}
+      .bgv-toggle{display:flex;gap:10px;align-items:center}
+      .bgv-toggle input{transform:scale(1.05)}
+      .bgv-sliderline{display:flex;align-items:center;gap:10px;min-width:0}
+      .bgv-range{
+      flex:1;
+      min-width:0;
+      accent-color:#5865f2
+      }
       .bgv-num{
-        width: 88px; padding: 8px 10px; border-radius: 10px;
-        border:1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25);
-        color: var(--text-normal); outline:none;
+      width:70px;
+      text-align:right;
+      font-family:monospace;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.14);
+      background:rgba(0,0,0,0.25);
+      color:var(--text-normal);
+      outline:none
       }
-      .bgv-btns{ display:flex; gap:10px; margin-top:12px; flex-wrap: wrap; }
+      .bgv-btns{
+      position:sticky;
+      bottom:0;
+      z-index:5;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      width:fit-content;
+      margin-top:12px;
+      padding:10px 12px;
+      background:rgba(0,0,0,0.35);
+      backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:12px;
+      box-shadow:0 10px 20px rgba(0,0,0,0.35)
+      }
       .bgv-btn{
-        padding: 9px 12px; border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.16);
-        background: rgba(255,255,255,0.07);
-        color: var(--text-normal);
-        cursor: pointer;
-        font-weight: 700;
+      padding:10px 14px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.16);
+      background:rgba(255,255,255,0.07);
+      color:var(--text-normal);
+      cursor:pointer;
+      font-weight:700
       }
-      .bgv-btn:hover{ background: rgba(255,255,255,0.10); }
-      .bgv-btn.primary{ background: rgba(88, 101, 242, 0.25); border-color: rgba(88, 101, 242, 0.45); }
-      .bgv-btn.danger{ background: rgba(245, 66, 66, 0.15); border-color: rgba(245, 66, 66, 0.35); }
-      .bgv-footnote{ margin-top:10px; font-size:11px; opacity:0.65; }
-      @media (max-width: 900px){ .bgv-grid{ grid-template-columns: 1fr; } }
+      .bgv-btn:hover{background:rgba(255,255,255,0.10)}
+      .bgv-btn.primary{
+      background:rgba(88,101,242,0.25);
+      border-color:rgba(88,101,242,0.45)
+      }
+      .bgv-btn.danger{
+      background:rgba(245,66,66,0.2);
+      border-color:rgba(245,66,66,0.6)
+      }
+      .bgv-footnote{margin-top:10px;font-size:11px;opacity:0.65}
+      @media (max-width:900px){.bgv-grid{grid-template-columns:1fr}}
     `
-    );
+      );
+      this._panelCssMounted = true;
+    }
 
     const wrap = document.createElement("div");
     wrap.className = "bgv-wrap";
@@ -604,7 +778,7 @@ module.exports = class BgVideo {
 
     const sub = document.createElement("div");
     sub.className = "bgv-sub";
-    sub.textContent = "Background MP4 loop";
+    sub.textContent = "Background MP4/WebM loop";
     headLeft.appendChild(sub);
 
     const right = document.createElement("div");
@@ -635,6 +809,15 @@ module.exports = class BgVideo {
     const liveT = mkToggle("Live", true);
     right.appendChild(liveT.box);
 
+    let cssRaf = 0;
+    const scheduleCssRefresh = () => {
+      if (cssRaf) return;
+      cssRaf = requestAnimationFrame(() => {
+        cssRaf = 0;
+        this.refreshCss();
+      });
+    };
+
     const grid = document.createElement("div");
     grid.className = "bgv-grid";
     card.appendChild(grid);
@@ -661,7 +844,7 @@ module.exports = class BgVideo {
     const setStatusPill = (pill, ok, text) => {
       pill.classList.toggle("bgv-ok", !!ok);
       pill.classList.toggle("bgv-bad", !ok);
-      pill.textContent = text;
+      if (pill.textContent !== text) pill.textContent = text;
     };
 
     const pill = document.createElement("div");
@@ -676,14 +859,15 @@ module.exports = class BgVideo {
     const urlInput = document.createElement("input");
     urlInput.className = "bgv-input";
     urlInput.type = "text";
-    urlInput.placeholder = "https://.../video";
+    urlInput.placeholder = "https://.../video(.mp4/.webm)";
     urlInput.value = this.settings.url || "";
     urlLine.appendChild(urlInput);
 
     const updateUrlPill = () => {
       const u = urlInput.value.trim();
       const ok = u && this.isValidUrl(u);
-      const hint = u && this.isMp4Likely(u) ? "URL OK (mp4?)" : "URL OK";
+      const ext = this.getLikelyVideoExt(u);
+      const hint = ext ? `URL OK (${ext})` : "URL OK";
       setStatusPill(pill, ok, ok ? hint : "Check URL");
     };
     updateUrlPill();
@@ -722,24 +906,40 @@ module.exports = class BgVideo {
       num.value = String(safe);
 
       const fmt = (v) => Number(v).toFixed(decimals);
+      let paintRaf = 0;
+      let lastPaint = "";
       const paint = () => {
-        valText.textContent = fmt(range.value);
+        const next = fmt(range.value);
+        if (next === lastPaint) return;
+        lastPaint = next;
+        valText.textContent = next;
+      };
+      const schedulePaint = () => {
+        if (paintRaf) return;
+        paintRaf = requestAnimationFrame(() => {
+          paintRaf = 0;
+          paint();
+        });
       };
 
       const clamp = (v) => Math.min(max, Math.max(min, Number(v)));
 
       const syncFromRange = () => {
-        num.value = String(range.value);
-        paint();
-        if (liveT.cb.checked) apply(false);
+        if (num.value !== String(range.value)) num.value = String(range.value);
+        schedulePaint();
+        if (liveT.cb.checked) {
+          apply({ reloadVideo: false, persistImmediate: false }).catch(() => {});
+        }
       };
 
       const syncFromNum = () => {
         const v = clamp(num.value);
         range.value = String(v);
         num.value = String(v);
-        paint();
-        if (liveT.cb.checked) apply(false);
+        schedulePaint();
+        if (liveT.cb.checked) {
+          apply({ reloadVideo: false, persistImmediate: false }).catch(() => {});
+        }
       };
 
       range.addEventListener("input", syncFromRange);
@@ -761,8 +961,10 @@ module.exports = class BgVideo {
       r.row.appendChild(cb);
 
       cb.addEventListener("change", () => {
-        this.saveSettings({ [key]: cb.checked });
-        if (liveT.cb.checked) apply(true);
+        apply({
+          reloadVideo: liveT.cb.checked,
+          persistImmediate: true,
+        }).catch(() => {});
       });
 
       return { row: r.row, cb };
@@ -783,8 +985,10 @@ module.exports = class BgVideo {
       num.addEventListener("change", () => {
         const v = Math.min(max, Math.max(min, Number(num.value)));
         num.value = String(v);
-        this.saveSettings({ [key]: v });
-        if (liveT.cb.checked) apply(true);
+        apply({
+          reloadVideo: liveT.cb.checked,
+          persistImmediate: true,
+        }).catch(() => {});
       });
 
       r.row.appendChild(num);
@@ -811,9 +1015,14 @@ module.exports = class BgVideo {
     grid.appendChild(stallRow.row);
     grid.appendChild(blobRow.row);
 
+    const foot = document.createElement("div");
+    foot.className = "bgv-footnote";
+    foot.textContent = "Live: changes apply immediately";
+    card.appendChild(foot);
+
     const btns = document.createElement("div");
     btns.className = "bgv-btns";
-    card.appendChild(btns);
+    wrap.appendChild(btns);
 
     const mkBtn = (text, cls = "") => {
       const b = document.createElement("button");
@@ -830,12 +1039,12 @@ module.exports = class BgVideo {
     btns.appendChild(testBtn);
     btns.appendChild(resetBtn);
 
-    const foot = document.createElement("div");
-    foot.className = "bgv-footnote";
-    foot.textContent = "Live: changes apply immediately";
-    card.appendChild(foot);
-
-    const apply = async (alsoPlay = true) => {
+    const apply = async ({
+      reloadVideo = true,
+      forceReload = false,
+      persistImmediate = true,
+    } = {}) => {
+      const prev = this.settings;
       const next = {
         url: urlInput.value.trim(),
         debug: debugT.cb.checked,
@@ -843,22 +1052,36 @@ module.exports = class BgVideo {
         blur: Number(sBlur.range.value),
         saturate: Number(sSat.range.value),
         brightness: Number(sBri.range.value),
-
         respectReducedMotion: !!reduceRow.cb.checked,
         autoRecover: !!recoverRow.cb.checked,
         stallThresholdSec: Number(stallRow.num.value),
         maxBlobMB: Number(blobRow.num.value),
       };
 
-      this.saveSettings(next);
-      this.refreshCss();
+      const changed = this.saveSettings(next, { persist: persistImmediate });
+      if (changed) {
+        if (this.isVisualSettingsChanged(prev, this.settings)) {
+          if (persistImmediate) {
+            this.refreshCss();
+          } else {
+            scheduleCssRefresh();
+          }
+        }
+        if (!persistImmediate) this.scheduleSettingsSave();
+      }
 
-      if (alsoPlay && this._video) {
-        await this.applyVideoSettings();
+      const shouldReloadVideo =
+        !!forceReload ||
+        (changed && this.isPlaybackSettingsChanged(prev, this.settings));
+
+      if (reloadVideo && this._video && shouldReloadVideo) {
+        await this.applyVideoSettings({ forceReload });
       }
     };
 
-    applyBtn.onclick = () => apply(true);
+    applyBtn.onclick = () => {
+      apply({ reloadVideo: true, persistImmediate: true }).catch(() => {});
+    };
 
     testBtn.onclick = async () => {
       const tempUrl = urlInput.value.trim();
@@ -866,11 +1089,12 @@ module.exports = class BgVideo {
         BdApi.UI.showToast("BgVideo: invalid URL", { type: "error" });
         return;
       }
-      await apply(true);
+      await apply({ reloadVideo: true, forceReload: true, persistImmediate: true });
     };
 
     resetBtn.onclick = async () => {
-      this.saveSettings({ ...this.defaults });
+      const prev = this.settings;
+      const changed = this.saveSettings({ ...this.defaults });
 
       urlInput.value = this.settings.url || "";
       debugT.cb.checked = !!this.settings.debug;
@@ -893,14 +1117,20 @@ module.exports = class BgVideo {
       blobRow.num.value = String(this.settings.maxBlobMB);
 
       updateUrlPill();
-      this.refreshCss();
+      if (changed && this.isVisualSettingsChanged(prev, this.settings)) {
+        this.refreshCss();
+      }
 
-      if (this._video) await this.applyVideoSettings();
+      if (changed && this._video && this.isPlaybackSettingsChanged(prev, this.settings)) {
+        await this.applyVideoSettings();
+      }
       if (this.settings.debug) this.toast("reset", "info");
     };
 
     urlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") apply(true);
+      if (e.key === "Enter") {
+        apply({ reloadVideo: true, persistImmediate: true }).catch(() => {});
+      }
     });
 
     return wrap;
