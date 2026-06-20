@@ -35,7 +35,7 @@ const STRINGS = {
     center: "Center",
     top: "Top",
     bottom: "Bottom",
-    localRestartWarning: "Local file playback works, but this environment does not expose a file path for automatic reload after restart.",
+    localRestartWarning: "Temporary local file. For restart persistence, use a file:///... URL in the Media URL field.",
     webpFailed: "WebP failed to load.",
     invalidUrl: "Invalid URL",
     fileTooLarge: "File is too large",
@@ -43,7 +43,6 @@ const STRINGS = {
     liveChanges: "Live: changes apply immediately",
     title: "BgVideo",
     subtitle: "Background media loop",
-    openPersistentPicker: "Select Persistent File"
   },
   ja: {
     sourceMode: "ソース種別",
@@ -72,7 +71,7 @@ const STRINGS = {
     center: "中央",
     top: "上部",
     bottom: "下部",
-    localRestartWarning: "ローカルファイルの再生は可能ですが、この環境では再起動後の自動再読み込みに必要なファイルパスを取得できません。",
+    localRestartWarning: "一時的なローカルファイルです。再起動後も使う場合はURL欄に file:///... を指定してください。",
     webpFailed: "WebPの読み込みに失敗しました。",
     invalidUrl: "無効なURLです。",
     fileTooLarge: "ファイルサイズが上限を超えています",
@@ -80,7 +79,6 @@ const STRINGS = {
     liveChanges: "Live: 変更は直ちに適用されます",
     title: "BgVideo",
     subtitle: "背景メディアをループ",
-    openPersistentPicker: "再起動可能なファイルを選択"
   }
 };
 
@@ -93,7 +91,6 @@ module.exports = class BgVideo {
       sourceMode: "url", // url, localFile, youtube
       mediaUrl: "https://raw.githubusercontent.com/Fokiiiiiii/disocrd-Thema/main/Grievous_Lady_2.5_.mp4",
       localFileMeta: null,
-      localFilePath: null,
       objectFit: "cover",
       objectPosition: "center",
       opacity: 0.3,
@@ -152,6 +149,11 @@ module.exports = class BgVideo {
       delete saved.url;
       changed = true;
     }
+    // Clean up old dialog / persistence values that might be leftover
+    if (saved.localFilePath) {
+      delete saved.localFilePath;
+      changed = true;
+    }
     if (changed) {
       BdApi.Data.save(this.PLUGIN_NAME, "settings", saved);
     }
@@ -186,65 +188,78 @@ module.exports = class BgVideo {
     BdApi.UI.showToast(`${this.PLUGIN_NAME}: ${msg}`, { type });
   }
 
-  logFileDiagnostics(file) {
-    this.log("Diagnostics: File selected.");
-    if (file) {
-      this.log(`- Name: ${file.name}, Size: ${file.size}, Type: ${file.type}`);
-      this.log(`- file.path exists: ${!!file.path}`);
-      if (file.path) {
-        this.log(`- file.path typeof: ${typeof file.path}, val starts with: ${file.path.substring(0, 10)}...`);
-      }
-    } else {
-      this.log(`- File object is null/undefined.`);
-    }
-    this.log(`- BdApi.openDialog exists: ${!!(window.BdApi && BdApi.openDialog)}`);
-    this.log(`- DiscordNative safe dialog exists: ${!!(window.DiscordNative && window.DiscordNative.fileManager && window.DiscordNative.fileManager.showOpenDialog)}`);
-    this.log(`- Stored settings.localFilePath exists: ${!!this.settings.localFilePath}`);
+  // --- HELPERS ---
+  isFileUrl(input) {
+    return typeof input === "string" && input.startsWith("file:///");
   }
 
-  // --- PATH TO FILE URL ---
-  pathToFileUrl(pathStr) {
-    if (!pathStr || typeof pathStr !== "string") return null;
-    let p = pathStr.replace(/\\/g, '/');
-    if (!p.startsWith('/')) {
-       p = '/' + p; // handle Windows "C:/" becoming "/C:/" for file URL standards
-    }
-    try {
-      // Safely encode parts so things like Japanese characters or spaces don't break the URL
-      const encoded = p.split('/').map(part => encodeURIComponent(part)).join('/');
-      // Revert the colon encoding for Windows drive letters (e.g. /C%3A/ -> /C:/)
-      const finalUrl = `file://${encoded.replace(/%3A/g, ':')}`;
-      this.log(`Diagnostics: Generated file URL: ${finalUrl}`);
-      return finalUrl;
-    } catch (e) {
-      this.log(`Diagnostics: pathToFileUrl failed`, e);
-      return null;
-    }
+  isHttpUrl(input) {
+    return typeof input === "string" && /^https?:\/\//i.test(input);
   }
 
-  async openPersistentPicker() {
-    this.log("Attempting persistent picker API...");
-    const filters = [{ name: "Media Files", extensions: ["mp4", "webm", "png", "jpg", "jpeg", "gif", "webp", "avif"] }];
-    try {
-      if (window.BdApi && typeof BdApi.openDialog === "function") {
-        this.log("Using BdApi.openDialog");
-        const res = await BdApi.openDialog({ filters, properties: ["openFile"] });
-        if (Array.isArray(res) && res.length > 0) return res[0];
-        if (typeof res === "string") return res;
-      } else if (window.DiscordNative && window.DiscordNative.fileManager && typeof window.DiscordNative.fileManager.showOpenDialog === "function") {
-        this.log("Using DiscordNative.fileManager.showOpenDialog");
-        const res = await window.DiscordNative.fileManager.showOpenDialog({ filters, properties: ["openFile"] });
-        if (Array.isArray(res) && res.length > 0) return res[0];
-      }
-    } catch (e) {
-      this.log("Persistent picker failed:", e);
-    }
-    return null;
-  }
-
-  // --- DETECTION ---
   isYouTubeUrl(input) {
-    return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(input);
+    return typeof input === "string" && /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(input);
+  }
+
+  isAbsoluteLocalPath(input) {
+    if (typeof input !== "string") return false;
+    return input.startsWith("/") || /^[a-zA-Z]:\\/.test(input) || /^[a-zA-Z]:\//.test(input);
+  }
+
+  pathToFileUrl(pathStr) {
+    if (!pathStr || typeof pathStr !== "string") return "";
+    let p = pathStr.replace(/\\/g, '/');
+    if (/^[a-zA-Z]:/.test(p)) {
+      p = '/' + p;
+    }
+    try {
+      const encoded = p.split('/').map(part => encodeURIComponent(part)).join('/');
+      return `file://${encoded.replace(/%3A/g, ':')}`;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  normalizeMediaUrl(input) {
+    if (typeof input !== "string") return "";
+    const trimmed = input.trim();
+    if (this.isAbsoluteLocalPath(trimmed)) {
+      return this.pathToFileUrl(trimmed);
+    }
+    return trimmed;
+  }
+
+  validateMediaUrl(input) {
+    if (typeof input !== "string") return false;
+    const url = input.trim();
+    if (this.isYouTubeUrl(url) || this.parseYouTubeVideoId(url)) {
+      return true;
+    }
+    const extMatch = url.match(/\.([a-z0-9]+)(?:[\?#]|$)/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "";
+    const supportedExts = ["mp4", "webm", "ogv", "ogg", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
+    
+    if (!supportedExts.includes(ext)) {
+      return false;
+    }
+    if (url.endsWith("/")) {
+      return false;
+    }
+    if (url.startsWith("file://")) {
+      if (!url.startsWith("file:///")) return false;
+    } else if (!this.isHttpUrl(url) && !this.isAbsoluteLocalPath(url)) {
+      return false;
+    }
+    return true;
+  }
+
+  detectMediaKindFromUrl(url) {
+    if (this.isYouTubeUrl(url) || this.parseYouTubeVideoId(url)) return "youtube";
+    const extMatch = String(url || "").match(/\.([a-z0-9]+)(?:[\?#]|$)/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "";
+    if (["mp4", "webm", "ogv", "ogg"].includes(ext)) return "video";
+    if (["png", "jpg", "jpeg", "gif", "avif", "bmp", "webp"].includes(ext)) return "image";
+    return "video";
   }
 
   parseYouTubeVideoId(input) {
@@ -255,15 +270,6 @@ module.exports = class BgVideo {
   parseYouTubePlaylistId(input) {
     const match = input.match(/[?&]list=([^&]+)/);
     return match ? match[1] : null;
-  }
-
-  guessMediaType(url) {
-    if (this.isYouTubeUrl(url)) return "youtube";
-    const extMatch = String(url || "").match(/\.([a-z0-9]+)(?:[\?#]|$)/i);
-    const ext = extMatch ? extMatch[1].toLowerCase() : "";
-    if (["mp4", "webm", "ogv"].includes(ext)) return "video";
-    if (["png", "jpg", "jpeg", "gif", "avif", "bmp", "webp"].includes(ext)) return "image";
-    return "video"; // Default fallback
   }
 
   checkWebPSupport() {
@@ -306,28 +312,13 @@ module.exports = class BgVideo {
     const wrapper = this.createMediaContainer();
     
     let sourceUrl = "";
-    let isLocalFile = false;
 
     if (this.settings.sourceMode === "url" || this.settings.sourceMode === "youtube") {
       sourceUrl = this.settings.mediaUrl?.trim();
     } else if (this.settings.sourceMode === "localFile") {
-      isLocalFile = true;
       if (this._localFileBlobUrl) {
-        // Immediate playback via object URL
         sourceUrl = this._localFileBlobUrl;
-        this.log(`Diagnostics: Using immediate blob URL ${sourceUrl}`);
-      } else if (this.settings.localFilePath) {
-        // Restart persistent loading
-        sourceUrl = this.pathToFileUrl(this.settings.localFilePath);
-        this.log(`Diagnostics: Restore attempt using local file path URL: ${sourceUrl}`);
-        if (!sourceUrl) {
-          this.log(`Diagnostics: Restore failed - path format invalid.`);
-          this.toast(this.t("localRestartWarning"), "error");
-          return;
-        }
       } else {
-        this.log(`Diagnostics: Restore failed - no path or blob url found.`);
-        this.toast(this.t("localRestartWarning"), "error");
         return;
       }
     }
@@ -336,11 +327,10 @@ module.exports = class BgVideo {
 
     this.log(`Attempting to load: ${sourceUrl.substring(0, 50)}...`);
 
-    let mediaType = this.guessMediaType(isLocalFile ? this.settings.localFileMeta : sourceUrl);
-    
+    let mediaType = this.detectMediaKindFromUrl(sourceUrl);
     if (this.settings.sourceMode === "youtube") mediaType = "youtube";
 
-    this.log(`Diagnostics: Detected Media Type: ${mediaType}`);
+    this.log(`Detected Media Type: ${mediaType}`);
 
     if (mediaType === "youtube") {
       const videoId = this.parseYouTubeVideoId(sourceUrl);
@@ -348,33 +338,26 @@ module.exports = class BgVideo {
         this.toast(this.t("invalidUrl"), "error");
         return;
       }
-      this.log("Diagnostics: Renderer chosen: YouTube");
       this._mediaNode = this.createYouTubeRenderer(videoId, sourceUrl);
     } else if (mediaType === "video") {
-      this.log("Diagnostics: Renderer chosen: Video");
       this._mediaNode = this.createVideoRenderer(sourceUrl);
     } else if (mediaType === "image") {
       if (sourceUrl.toLowerCase().endsWith(".webp") || (this.settings.localFileMeta && this.settings.localFileMeta.toLowerCase().includes(".webp"))) {
         const supported = await this.checkWebPSupport();
         if (!supported) {
           this.toast(this.t("webpFailed"), "error");
-          this.log("Diagnostics: WebP load failed.");
           return;
         }
       }
-      this.log("Diagnostics: Renderer chosen: Image");
       this._mediaNode = this.createImageRenderer(sourceUrl);
     } else {
       this.toast(this.t("unsupportedMedia"), "error");
-      this.log("Diagnostics: Unsupported media.");
       return;
     }
 
     wrapper.appendChild(this._mediaNode);
     this.applyVisualSettings();
     this._reassertNoControls();
-    
-    this.log("Diagnostics: Renderer appended successfully.");
   }
 
   createVideoRenderer(src) {
@@ -397,7 +380,6 @@ module.exports = class BgVideo {
 
     v.addEventListener("error", (e) => {
       this.toast(`Video load error (code ${v.error?.code}).`, "error");
-      this.log("Diagnostics: Video load error:", e, v.error);
     });
 
     return v;
@@ -413,7 +395,6 @@ module.exports = class BgVideo {
     
     img.addEventListener("error", (e) => {
       this.toast(`Image load error.`, "error");
-      this.log("Diagnostics: Image load error:", e);
     });
     return img;
   }
@@ -427,19 +408,19 @@ module.exports = class BgVideo {
     iframe.setAttribute("aria-hidden", "true");
     iframe.style.pointerEvents = "none";
     
-    const playlistId = this.parseYouTubePlaylistId(originalUrl);
-    
+    // Assemble query parameters exactly as requested:
+    // autoplay=1&mute=1&loop=1&playlist=VIDEO_ID&controls=0&playsinline=1&rel=0&iv_load_policy=3&disablekb=1&fs=0
     const params = new URLSearchParams();
-    if (this.settings.youtubeAutoplay) params.append("autoplay", "1");
-    if (this.settings.youtubeMuted) params.append("mute", "1");
-    if (this.settings.youtubeLoop) {
-      params.append("loop", "1");
-      params.append("playlist", playlistId || videoId);
-    }
+    params.append("autoplay", "1");
+    params.append("mute", "1");
+    params.append("loop", "1");
+    params.append("playlist", videoId);
     params.append("controls", "0");
     params.append("playsinline", "1");
     params.append("rel", "0");
-    params.append("modestbranding", "1");
+    params.append("iv_load_policy", "3");
+    params.append("disablekb", "1");
+    params.append("fs", "0");
     
     iframe.src = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
     return iframe;
@@ -727,7 +708,14 @@ module.exports = class BgVideo {
         inp.className = "bgv-input";
         inp.type = "text";
         inp.value = this.settings.mediaUrl || "";
-        inp.addEventListener("change", (e) => this.saveSettings({ mediaUrl: e.target.value }));
+        inp.addEventListener("change", (e) => {
+          const norm = this.normalizeMediaUrl(e.target.value);
+          inp.value = norm;
+          if (norm && !this.validateMediaUrl(norm)) {
+            this.toast(this.t("unsupportedMedia"), "error");
+          }
+          this.saveSettings({ mediaUrl: norm });
+        });
         dynamicMediaRow.appendChild(inp);
       } else {
         const lbl = document.createElement("div");
@@ -743,51 +731,21 @@ module.exports = class BgVideo {
         fileInp.style.padding = "6px";
         fileInp.addEventListener("change", (e) => {
           const file = e.target.files[0];
-          this.logFileDiagnostics(file);
           if (!file) return;
           if (file.size > this.settings.maxBlobMB * 1024 * 1024) {
             BdApi.UI.showToast(this.t("fileTooLarge"), { type: "error" });
             return;
           }
           if (this._localFileBlobUrl) {
-            this.log("Diagnostics: Revoking old blob URL before creating a new one.");
             URL.revokeObjectURL(this._localFileBlobUrl);
           }
           this._localFileBlobUrl = URL.createObjectURL(file);
-          
-          let localPath = file.path || null;
-          this.saveSettings({ localFilePath: localPath, localFileMeta: file.name });
+          this.saveSettings({ localFileMeta: file.name });
           
           this.updateMediaSource();
           renderDynamicMediaRow();
         });
         dynamicMediaRow.appendChild(fileInp);
-        
-        // Persistent Picker API (BdApi / Electron Native)
-        const canUsePersistentAPI = !!((window.BdApi && BdApi.openDialog) || (window.DiscordNative && window.DiscordNative.fileManager && window.DiscordNative.fileManager.showOpenDialog));
-        if (canUsePersistentAPI) {
-          const btnPicker = document.createElement("button");
-          btnPicker.className = "bgv-btn";
-          btnPicker.style.marginTop = "8px";
-          btnPicker.textContent = this.t("openPersistentPicker");
-          btnPicker.onclick = async () => {
-            const path = await this.openPersistentPicker();
-            if (path) {
-              const fileName = path.split('\\').pop().split('/').pop();
-              this.logFileDiagnostics(null); // Just to log api state
-              this.log(`Diagnostics: Picked persistent path: ${path}`);
-              this.saveSettings({ localFilePath: path, localFileMeta: fileName });
-              // We don't have a blob here, so clear it so updateMediaSource builds the file:// url
-              if (this._localFileBlobUrl) {
-                 URL.revokeObjectURL(this._localFileBlobUrl);
-                 this._localFileBlobUrl = null;
-              }
-              this.updateMediaSource();
-              renderDynamicMediaRow();
-            }
-          };
-          dynamicMediaRow.appendChild(btnPicker);
-        }
 
         if (this.settings.localFileMeta) {
            const sub = document.createElement("div");
@@ -798,15 +756,12 @@ module.exports = class BgVideo {
            dynamicMediaRow.appendChild(sub);
         }
         
-        const canPersist = canUsePersistentAPI || (this.settings.localFilePath !== null && this.settings.localFilePath !== undefined);
-        if (!canPersist) {
-           const warn = document.createElement("div");
-           warn.style.fontSize = "11px";
-           warn.style.color = "rgba(255, 100, 100, 0.9)";
-           warn.style.marginTop = "6px";
-           warn.textContent = this.t("localRestartWarning");
-           dynamicMediaRow.appendChild(warn);
-        }
+        const warn = document.createElement("div");
+        warn.style.fontSize = "11px";
+        warn.style.color = "rgba(255, 100, 100, 0.9)";
+        warn.style.marginTop = "6px";
+        warn.textContent = this.t("localRestartWarning");
+        dynamicMediaRow.appendChild(warn);
       }
     };
     renderDynamicMediaRow();
@@ -910,11 +865,10 @@ module.exports = class BgVideo {
     btns.appendChild(mkBtn(this.t("test"), "", () => this.updateMediaSource()));
     btns.appendChild(mkBtn(this.t("clearLocalFile"), "danger", () => {
        if (this._localFileBlobUrl) {
-           this.log("Diagnostics: Revoking blob URL on explicit clear.");
            URL.revokeObjectURL(this._localFileBlobUrl);
            this._localFileBlobUrl = null;
        }
-       this.saveSettings({ localFilePath: null, localFileMeta: null });
+       this.saveSettings({ localFileMeta: null });
        this.toast("Cleared", "success");
        updateRender();
     }));

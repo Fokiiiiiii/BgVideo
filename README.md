@@ -14,8 +14,8 @@ BgVideo lets you replace Discord's static background with an animated video, a Y
   - Supports video formats (`MP4`, `WebM`).
   - Supports image formats (`PNG`, `JPG`, `GIF`, and `WebP` with conditional transparency).
 - **Local File Persistence**:
-  - Automatically attempts to restore local file paths across Discord restarts in desktop (Electron) environments using native file paths.
-  - Automatically falls back to session-only blobs if native path access is restricted, with detailed diagnostic logging in settings.
+  - Supports restart-persistent playback by entering a `file:///` URL or a raw absolute local path (e.g. `/Users/...` or `C:\Users\...`) directly in the **Media URL** field. Raw paths are automatically normalized to `file:///` URIs.
+  - Selecting a file via the local file picker is session-only (temporary).
 - **Visual Tuning Controls**:
   - Opacity, Blur, Saturation, and Brightness adjustments.
   - Seamlessly integrates with the Discord UI under standard Discord dark/light themes.
@@ -42,7 +42,7 @@ The settings UI is kept compact, adhering to the classic BetterDiscord control s
 ### Source Settings
 - **Source Type**: Select between `Remote URL`, `Local File`, or `YouTube`.
 - **Video URL / YouTube ID**: Input the link or ID of the background media.
-- **Local File Picker**: Select or drag a local media file. Includes a native file dialog button for path persistence.
+- **Local File Picker**: Select or drag a local media file for temporary session-only playback.
 
 ### Appearance
 - **Opacity**: Adjust background transparency.
@@ -55,11 +55,11 @@ The settings UI is kept compact, adhering to the classic BetterDiscord control s
 - **Auto Recover Playback**: Restarts the media element if playback stalls.
 - **Stall Threshold (sec)**: Time to wait before executing a playback recovery.
 
-### Diagnostics (Debug Mode)
-- **Debug Mode**: Toggle to show status logs and diagnostic warnings (e.g. details on why a local file path could or couldn't be persisted across restarts).
+### Diagnostics
+- **Debug Mode**: Toggle to show status logs in the browser console.
 
 ## Limitations & Troubleshooting
 
 - **YouTube Overlay**: Best-effort YouTube iframe embedding is used. To avoid YouTube interface elements, BgVideo plays continuously and removes pointer events. Region-restricted, private, or embedding-disabled videos cannot be played.
-- **Local File Autoload**: If the plugin cannot restore local files on startup, verify the logs in Debug Mode. Some environments restrict native file loading due to security rules (CSP). If restricted, you will need to re-select the file after restarting Discord.
+- **Local File Autoload**: If `file:///` URLs or absolute paths fail to load on startup, verify if Discord's Content Security Policy (CSP) restricts native file protocol loading in your client. If restricted, you may need to host the media on a remote URL.
 
