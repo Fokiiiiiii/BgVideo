@@ -10,20 +10,18 @@
 const STRINGS = {
   en: {
     source: "Source",
-    mediaTest: "Media Test",
     appearance: "Appearance",
     playback: "Playback",
-    limitsSafety: "Limits & Safety",
-    diagnostics: "Diagnostics",
+    advancedDiagnostics: "Advanced / Diagnostics",
     mediaUrl: "Media URL",
     sourceMode: "Source Mode",
     localFile: "Local File",
     youtube: "YouTube",
     testMedia: "Test Media",
-    applyReload: "Apply / Reload Media",
+    applyReload: "Apply / Reload",
     clearLocalFile: "Clear Local File",
-    resetDefaults: "Reset to Defaults",
-    maxLocalFileSize: "Maximum local file size",
+    resetDefaults: "Reset Defaults",
+    maxLocalFileSize: "Max local file size",
     opacity: "Opacity",
     blur: "Blur",
     brightness: "Brightness",
@@ -35,15 +33,8 @@ const STRINGS = {
     muted: "Muted",
     debug: "Debug",
     status: "Status",
-    descSource: "Select where your media comes from.",
-    descTest: "Apply changes immediately.",
-    descAppearance: "Adjust visual settings.",
-    descPlayback: "Options sent to YouTube iframe.",
-    descLimits: "Reduced motion and local bounds.",
-    descDiag: "Status reporting.",
     remoteUrl: "Remote URL",
-    youtubeWarning: "YouTube playback is a best-effort iframe renderer. Autoplay, loops, and embeds depend entirely on YouTube policies. Some videos cannot be embedded.",
-    localRestartWarning: "Local files are loaded directly from disk. You MUST re-select the file after restarting Discord/BetterDiscord.",
+    localRestartWarning: "This environment does not support automatic local file reload. Please reselect the file after restart.",
     fileTooLarge: "File is too large. Increase the limit or choose a smaller file.",
     invalidUrl: "Invalid URL.",
     unsupportedMedia: "Unsupported media type.",
@@ -57,24 +48,18 @@ const STRINGS = {
     center: "Center",
     top: "Top",
     bottom: "Bottom",
-    showControls: "Show Controls",
     pauseVideo: "Pause Video",
     hideAnimated: "Hide Animated/Media",
     disableAllMedia: "Disable All Media",
     ignore: "Ignore",
-    mediaTypeOverride: "Media Type Override",
     reducedMotionBehavior: "Reduced Motion Behavior",
-    language: "Language",
-    languageDesc: "UI Language",
-    fileSelectWarning: "Supported: mp4, webm, png, jpg, gif, webp."
+    clearFileConfirm: "Local file cleared.",
   },
   ja: {
     source: "ソース",
-    mediaTest: "メディアテスト",
     appearance: "表示",
     playback: "再生",
-    limitsSafety: "上限と安全性",
-    diagnostics: "診断",
+    advancedDiagnostics: "詳細設定 / 診断",
     mediaUrl: "メディアURL",
     sourceMode: "ソース種別",
     localFile: "ローカルファイル",
@@ -95,15 +80,8 @@ const STRINGS = {
     muted: "ミュート",
     debug: "デバッグ",
     status: "状態",
-    descSource: "メディアの取得元を選択します。",
-    descTest: "変更を直ちに適用します。",
-    descAppearance: "視覚的な設定を調整します。",
-    descPlayback: "YouTubeのiframeへ送信するオプション。",
-    descLimits: "視差効果の低減とローカルファイルの上限。",
-    descDiag: "状態のレポート。",
     remoteUrl: "リモートURL",
-    youtubeWarning: "YouTubeの再生はベストエフォートなiframeレンダリングです。自動再生、ループ、埋め込み機能はYouTubeのポリシーに依存します。一部の動画は埋め込みできません。",
-    localRestartWarning: "ローカルファイルは直接ディスクから読み込まれます。Discord/BetterDiscordを再起動した後は再選択が必須です。",
+    localRestartWarning: "この環境ではローカルファイルの自動再読み込みに対応していません。再起動後は再選択が必要です。",
     fileTooLarge: "ファイルサイズが上限を超えています。上限を上げるか、より小さいファイルを選択してください。",
     invalidUrl: "無効なURLです。",
     unsupportedMedia: "サポートされていないメディア形式です。",
@@ -117,16 +95,12 @@ const STRINGS = {
     center: "中央",
     top: "上部",
     bottom: "下部",
-    showControls: "コントロールを表示",
     pauseVideo: "動画を一時停止",
     hideAnimated: "アニメーション/メディアを非表示",
     disableAllMedia: "すべてのメディアを無効化",
     ignore: "無視",
-    mediaTypeOverride: "メディア種別オーバーライド",
     reducedMotionBehavior: "視差効果を減らす際の動作",
-    language: "言語",
-    languageDesc: "UI言語設定",
-    fileSelectWarning: "対応形式: mp4, webm, png, jpg, gif, webp"
+    clearFileConfirm: "ローカルファイルを解除しました。",
   }
 };
 
@@ -136,11 +110,11 @@ module.exports = class BgVideo {
     this.PANEL_STYLE_ID = `${this.PLUGIN_NAME}-panel`;
 
     this.defaults = {
-      language: "auto", // auto, en, ja
       sourceMode: "url", // url, localFile, youtube
       mediaType: "auto", // auto, video, image, youtube
       mediaUrl: "https://raw.githubusercontent.com/Fokiiiiiii/disocrd-Thema/main/Grievous_Lady_2.5_.mp4",
       localFileMeta: null,
+      localFilePath: null,
       objectFit: "cover",
       objectPosition: "center",
       opacity: 0.3,
@@ -174,12 +148,20 @@ module.exports = class BgVideo {
 
   // --- I18N ---
 
+  getLang() {
+    try {
+      const docLang = document.documentElement?.lang || "";
+      const navLang = navigator.language || navigator.userLanguage || "";
+      const discordLang = window.DiscordNative?.app?.getLocale?.() || "";
+      
+      const langStr = (discordLang || docLang || navLang).toLowerCase();
+      if (langStr.startsWith("ja")) return "ja";
+    } catch (e) {}
+    return "en";
+  }
+
   t(key) {
-    let lang = this.settings.language;
-    if (lang === "auto") {
-      const navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
-      lang = navLang.startsWith("ja") ? "ja" : "en";
-    }
+    const lang = this.getLang();
     const dict = STRINGS[lang] || STRINGS.en;
     return dict[key] || STRINGS.en[key] || key;
   }
@@ -194,16 +176,19 @@ module.exports = class BgVideo {
 
   migrateSettings(saved) {
     let changed = false;
-    // Migrate old .url to .mediaUrl
     if (saved.url && !saved.mediaUrl) {
       saved.mediaUrl = saved.url;
       delete saved.url;
       changed = true;
     }
-    // Respect reduced motion migration
     if (saved.respectReducedMotion !== undefined) {
       saved.reducedMotionBehavior = saved.respectReducedMotion ? "pauseVideo" : "ignore";
       delete saved.respectReducedMotion;
+      changed = true;
+    }
+    // Remove unused language setting if it somehow got persisted
+    if (saved.language !== undefined) {
+      delete saved.language;
       changed = true;
     }
     if (changed) {
@@ -235,11 +220,9 @@ module.exports = class BgVideo {
   }
 
   toast(msg, type = "info") {
-    // Avoid spam
     if (this._toastCooldowns.has(msg)) return;
     this._toastCooldowns.add(msg);
     setTimeout(() => this._toastCooldowns.delete(msg), 3000);
-    
     BdApi.UI.showToast(`${this.PLUGIN_NAME}: ${msg}`, { type });
   }
 
@@ -265,15 +248,13 @@ module.exports = class BgVideo {
     if (mute) params.append("mute", "1");
     if (loop) {
       params.append("loop", "1");
-      // YouTube loop requires playlist param for single video
       params.append("playlist", playlistId || videoId);
     }
-    params.append("controls", "0"); // Force controls off for background playback
+    params.append("controls", "0");
     if (start > 0) params.append("start", Math.floor(start).toString());
     params.append("playsinline", "1");
     params.append("rel", "0");
     params.append("modestbranding", "1");
-    
     return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
   }
 
@@ -297,13 +278,10 @@ module.exports = class BgVideo {
 
   guessMediaType(url) {
     if (this.isYouTubeUrl(url)) return "youtube";
-    
     const extMatch = String(url || "").match(/\.([a-z0-9]+)(?:[\?#]|$)/i);
     const ext = extMatch ? extMatch[1].toLowerCase() : "";
-    
     if (["mp4", "webm", "ogv"].includes(ext)) return "video";
     if (["png", "jpg", "jpeg", "gif", "avif", "bmp", "webp"].includes(ext)) return "image";
-    
     return "unknown";
   }
 
@@ -321,16 +299,13 @@ module.exports = class BgVideo {
 
   attachReducedMotionHandler() {
     if (this._motionQuery || this._onMotionChange) return;
-
     try {
       this._motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       this._onMotionChange = () => {
         this.applyReducedMotion();
       };
       this._motionQuery.addEventListener("change", this._onMotionChange);
-    } catch (e) {
-      this.log("Reduced motion init failed:", e);
-    }
+    } catch (e) {}
   }
 
   detachReducedMotionHandler() {
@@ -399,17 +374,17 @@ module.exports = class BgVideo {
     let sourceUrl = "";
     let mediaType = this.settings.mediaType;
 
-    if (this.settings.sourceMode === "url") {
+    if (this.settings.sourceMode === "url" || this.settings.sourceMode === "youtube") {
       sourceUrl = this.settings.mediaUrl?.trim();
     } else if (this.settings.sourceMode === "localFile") {
-      if (this._localFileBlobUrl) {
+      if (this.settings.localFilePath) {
+        sourceUrl = `file://${this.settings.localFilePath}`;
+      } else if (this._localFileBlobUrl) {
         sourceUrl = this._localFileBlobUrl;
       } else {
         this.toast(this.t("localRestartWarning"), "error");
         return;
       }
-    } else if (this.settings.sourceMode === "youtube") {
-      sourceUrl = this.settings.mediaUrl?.trim();
     }
 
     if (!sourceUrl) return;
@@ -477,7 +452,7 @@ module.exports = class BgVideo {
     img.setAttribute("aria-hidden", "true");
     
     img.addEventListener("error", () => {
-      this.toast(`Image failed to load.`, "error");
+      this.toast(`Image load error.`, "error");
     });
     return img;
   }
@@ -500,7 +475,7 @@ module.exports = class BgVideo {
       loop: this.settings.youtubeLoop,
       mute: this.settings.youtubeMuted,
       autoplay: this.settings.youtubeAutoplay,
-      controls: false // Enforce false for background
+      controls: false
     });
 
     return iframe;
@@ -533,11 +508,9 @@ module.exports = class BgVideo {
         object-position: ${s.objectPosition};
         pointer-events: none !important;
       }
-      /* Approximate object-fit for iframes since it isn't fully supported natively by iframes */
       iframe#bgVideo-media {
         ${s.objectFit === 'cover' ? 'width: 150vw; height: 150vh; left: -25vw; top: -25vh; position: absolute;' : ''}
       }
-      /* Aggressively hide native video controls */
       video#bgVideo-media::-webkit-media-controls,
       video#bgVideo-media::-webkit-media-controls-enclosure,
       video#bgVideo-media::-webkit-media-controls-panel,
@@ -565,6 +538,7 @@ module.exports = class BgVideo {
   // --- FOCUS & VISIBILITY HANDLERS ---
 
   _onVisibilityOrFocus() {
+    // Only re-assert non-interactivity. Do not force pause/play.
     this._reassertNoControls();
   }
 
@@ -575,11 +549,7 @@ module.exports = class BgVideo {
     if (node.tagName === "VIDEO") {
       node.controls = false;
       node.removeAttribute("controls");
-      if (node.paused && !this.shouldReduceMotion()) {
-        try { node.play(); } catch {}
-      }
     }
-    
     if (node.tagName === "IFRAME") {
       node.style.pointerEvents = "none";
     }
@@ -621,391 +591,256 @@ module.exports = class BgVideo {
       BdApi.DOM.addStyle(
         this.PANEL_STYLE_ID,
         `
-        .bgv-settings-wrap { padding: 8px; color: var(--text-normal); font-family: var(--font-primary); }
-        .bgv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--background-modifier-accent); }
-        .bgv-header-title { font-size: 20px; font-weight: 800; color: var(--header-primary); }
-        .bgv-header-desc { font-size: 14px; color: var(--header-secondary); margin-top: 4px; }
-        .bgv-section { margin-bottom: 16px; padding: 16px; background: var(--background-secondary); border-radius: 8px; border: 1px solid var(--background-modifier-accent); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .bgv-section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; color: var(--header-secondary); letter-spacing: 0.5px; }
-        .bgv-section-desc { font-size: 13px; margin-bottom: 16px; color: var(--text-muted); }
-        .bgv-row { margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-        .bgv-row-col { flex-direction: column; align-items: stretch; gap: 8px; }
-        .bgv-label-container { flex: 1; min-width: 0; }
-        .bgv-label { font-size: 14px; font-weight: 600; color: var(--header-primary); }
-        .bgv-desc { font-size: 13px; color: var(--header-secondary); margin-top: 2px; }
-        .bgv-input { width: 100%; padding: 8px 12px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); box-sizing: border-box; }
-        .bgv-select { width: 100%; padding: 8px 12px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); cursor: pointer; box-sizing: border-box; }
-        .bgv-slider-container { display: flex; align-items: center; gap: 12px; width: 100%; }
-        .bgv-slider { flex: 1; cursor: pointer; accent-color: var(--brand-experiment); }
-        .bgv-slider-val { font-family: var(--font-code); font-size: 13px; background: var(--background-primary); padding: 4px 8px; border-radius: 4px; min-width: 48px; text-align: center; border: 1px solid var(--background-modifier-accent); }
-        .bgv-btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; border: none; background: var(--brand-experiment); color: #fff; transition: background-color 0.2s, opacity 0.2s; font-size: 14px; }
-        .bgv-btn:hover { background: var(--brand-experiment-560); }
+        .bgv-wrap { padding: 10px; color: var(--text-normal); font-family: var(--font-primary); font-size: 14px; }
+        .bgv-section-title { font-weight: 700; color: var(--header-primary); margin: 20px 0 10px 0; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-accent); }
+        .bgv-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--background-modifier-accent); }
+        .bgv-row-col { flex-direction: column; align-items: flex-start; }
+        .bgv-row-col > div { margin-bottom: 6px; }
+        .bgv-label { font-weight: 600; color: var(--header-primary); }
+        .bgv-desc { font-size: 12px; color: var(--header-secondary); margin-top: 2px; }
+        .bgv-input, .bgv-select { width: 100%; max-width: 400px; padding: 8px; background: var(--input-background); border: 1px solid var(--background-tertiary); border-radius: 4px; color: var(--text-normal); margin-top: 4px; }
+        .bgv-slider-container { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 400px; }
+        .bgv-slider { flex: 1; accent-color: var(--brand-experiment); }
+        .bgv-slider-val { width: 60px; padding: 4px; text-align: center; background: var(--input-background); border: 1px solid var(--background-tertiary); border-radius: 4px; color: var(--text-normal); }
+        .bgv-btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 500; border: none; background: var(--brand-experiment); color: #fff; transition: opacity 0.2s; }
+        .bgv-btn:hover { opacity: 0.8; }
         .bgv-btn-danger { background: var(--button-danger-background); }
-        .bgv-btn-danger:hover { background: var(--button-danger-background-hover); }
-        .bgv-box { padding: 12px; border-radius: 4px; margin-bottom: 14px; font-size: 13px; line-height: 1.4; }
-        .bgv-box-info { background: var(--background-message-hover); border-left: 4px solid var(--brand-experiment); color: var(--text-normal); }
-        .bgv-box-warn { background: rgba(250, 166, 26, 0.1); border-left: 4px solid var(--text-warning); color: var(--text-normal); }
+        .bgv-flex-btns { display: flex; gap: 10px; margin-top: 10px; }
+        .bgv-help-text { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
         `
       );
       this._panelCssMounted = true;
     }
 
     const wrap = document.createElement("div");
-    wrap.className = "bgv-settings-wrap";
+    wrap.className = "bgv-wrap";
 
     // --- UI HELPERS ---
-    const createHeader = () => {
-      const header = document.createElement("div");
-      header.className = "bgv-header";
+    const createSectionTitle = (text) => {
+      const el = document.createElement("div");
+      el.className = "bgv-section-title";
+      el.textContent = text;
+      wrap.appendChild(el);
+    };
+
+    const createRow = (labelText, descText, rightElement, isCol = false) => {
+      const row = document.createElement("div");
+      row.className = isCol ? "bgv-row bgv-row-col" : "bgv-row";
       
       const left = document.createElement("div");
-      const title = document.createElement("div");
-      title.className = "bgv-header-title";
-      title.textContent = this.PLUGIN_NAME;
-      const desc = document.createElement("div");
-      desc.className = "bgv-header-desc";
-      desc.textContent = "Background Media Loop";
-      left.appendChild(title);
-      left.appendChild(desc);
-      header.appendChild(left);
-      
-      const right = document.createElement("div");
-      const langSel = document.createElement("select");
-      langSel.className = "bgv-select";
-      langSel.style.width = "auto";
-      langSel.style.padding = "4px 8px";
-      
-      [
-        { value: "auto", label: "Language: Auto" },
-        { value: "en", label: "English" },
-        { value: "ja", label: "日本語" }
-      ].forEach(opt => {
-        const option = document.createElement("option");
-        option.value = opt.value;
-        option.textContent = opt.label;
-        if (opt.value === this.settings.language) option.selected = true;
-        langSel.appendChild(option);
-      });
-      langSel.addEventListener("change", (e) => {
-        this.saveSettings({ language: e.target.value });
-        updateRender();
-      });
-      right.appendChild(langSel);
-      header.appendChild(right);
-      
-      wrap.appendChild(header);
-    };
-
-    const createSection = (titleText, descText) => {
-      const section = document.createElement("div");
-      section.className = "bgv-section";
-      if (titleText) {
-        const title = document.createElement("div");
-        title.className = "bgv-section-title";
-        title.textContent = titleText;
-        section.appendChild(title);
-      }
-      if (descText) {
-        const desc = document.createElement("div");
-        desc.className = "bgv-section-desc";
-        desc.textContent = descText;
-        section.appendChild(desc);
-      }
-      wrap.appendChild(section);
-      return section;
-    };
-
-    const createWarningBox = (parent, text) => {
-      const box = document.createElement("div");
-      box.className = "bgv-box bgv-box-warn";
-      box.textContent = text;
-      parent.appendChild(box);
-    };
-
-    const createInfoBox = (parent, text) => {
-      const box = document.createElement("div");
-      box.className = "bgv-box bgv-box-info";
-      box.textContent = text;
-      parent.appendChild(box);
-    };
-
-    const createLabelContainer = (labelText, descText) => {
-      const lblCont = document.createElement("div");
-      lblCont.className = "bgv-label-container";
       const lbl = document.createElement("div");
       lbl.className = "bgv-label";
       lbl.textContent = labelText;
-      lblCont.appendChild(lbl);
+      left.appendChild(lbl);
       if (descText) {
         const desc = document.createElement("div");
         desc.className = "bgv-desc";
         desc.textContent = descText;
-        lblCont.appendChild(desc);
+        left.appendChild(desc);
       }
-      return lblCont;
-    };
-
-    const createSelectRow = (parent, labelText, descText, options, value, onChange) => {
-      const row = document.createElement("div");
-      row.className = "bgv-row bgv-row-col";
-      row.appendChild(createLabelContainer(labelText, descText));
-
-      const sel = document.createElement("select");
-      sel.className = "bgv-select";
-      options.forEach(opt => {
-        const option = document.createElement("option");
-        option.value = opt.value;
-        option.textContent = opt.label;
-        if (opt.value === value) option.selected = true;
-        sel.appendChild(option);
-      });
-      sel.addEventListener("change", (e) => onChange(e.target.value));
-      row.appendChild(sel);
+      row.appendChild(left);
       
-      parent.appendChild(row);
-      return sel;
-    };
-
-    const createInputRow = (parent, labelText, descText, value, placeholder, onChange) => {
-      const row = document.createElement("div");
-      row.className = "bgv-row bgv-row-col";
-      row.appendChild(createLabelContainer(labelText, descText));
-
-      const inp = document.createElement("input");
-      inp.className = "bgv-input";
-      inp.type = "text";
-      inp.value = value || "";
-      inp.placeholder = placeholder || "";
-      inp.addEventListener("input", (e) => onChange(e.target.value));
-      row.appendChild(inp);
-
-      parent.appendChild(row);
-      return inp;
-    };
-
-    const createSliderRow = (parent, labelText, descText, min, max, step, value, onChange, unit = "") => {
-      const row = document.createElement("div");
-      row.className = "bgv-row bgv-row-col";
-      row.appendChild(createLabelContainer(labelText, descText));
-
-      const container = document.createElement("div");
-      container.className = "bgv-slider-container";
-
-      const slider = document.createElement("input");
-      slider.className = "bgv-slider";
-      slider.type = "range";
-      slider.min = min;
-      slider.max = max;
-      slider.step = step;
-      slider.value = value;
-
-      const numInput = document.createElement("input");
-      numInput.className = "bgv-slider-val";
-      numInput.type = "number";
-      numInput.min = min;
-      numInput.max = max;
-      numInput.step = step;
-      numInput.value = value;
-      numInput.style.width = "70px";
-
-      const syncVal = (valStr) => {
-        let v = parseFloat(valStr);
-        if (isNaN(v)) return;
-        v = Math.max(min, Math.min(max, v));
-        slider.value = v;
-        numInput.value = v;
-        onChange(v);
-      };
-
-      slider.addEventListener("input", (e) => syncVal(e.target.value));
-      numInput.addEventListener("change", (e) => syncVal(e.target.value));
-
-      container.appendChild(slider);
-      container.appendChild(numInput);
-      if (unit) {
-        const u = document.createElement("span");
-        u.textContent = unit;
-        u.style.fontSize = "13px";
-        u.style.color = "var(--header-secondary)";
-        container.appendChild(u);
+      if (rightElement) {
+        row.appendChild(rightElement);
       }
-      row.appendChild(container);
-
-      parent.appendChild(row);
-      return slider;
-    };
-
-    const createSwitchRow = (parent, labelText, descText, value, onChange) => {
-      const row = document.createElement("div");
-      row.className = "bgv-row";
-      row.appendChild(createLabelContainer(labelText, descText));
-
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = value;
-      cb.style.transform = "scale(1.3)";
-      cb.style.cursor = "pointer";
-      cb.addEventListener("change", (e) => onChange(e.target.checked));
-      row.appendChild(cb);
-
-      parent.appendChild(row);
-      return cb;
-    };
-
-    const createFilePickerRow = (parent, labelText, descText, onFileChange) => {
-      const row = document.createElement("div");
-      row.className = "bgv-row bgv-row-col";
-      row.appendChild(createLabelContainer(labelText, descText));
-
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp,image/avif";
-      inp.className = "bgv-input";
-      inp.style.padding = "6px";
-      
-      inp.addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          onFileChange(file);
-        }
-      });
-      row.appendChild(inp);
-
-      parent.appendChild(row);
-      return inp;
+      wrap.appendChild(row);
+      return row;
     };
 
     const updateRender = () => {
       wrap.innerHTML = "";
-      createHeader();
 
       // 1. Source
-      const secSource = createSection(this.t("source"), this.t("descSource"));
-      createSelectRow(secSource, this.t("sourceMode"), "", [
+      createSectionTitle(this.t("source"));
+      
+      const sourceSel = document.createElement("select");
+      sourceSel.className = "bgv-select";
+      [
         { label: this.t("remoteUrl"), value: "url" },
         { label: this.t("localFile"), value: "localFile" },
         { label: this.t("youtube"), value: "youtube" }
-      ], this.settings.sourceMode, (v) => {
-        this.saveSettings({ sourceMode: v });
+      ].forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (opt.value === this.settings.sourceMode) option.selected = true;
+        sourceSel.appendChild(option);
+      });
+      sourceSel.addEventListener("change", (e) => {
+        this.saveSettings({ sourceMode: e.target.value });
         updateRender();
       });
+      createRow(this.t("sourceMode"), "", sourceSel);
 
       if (this.settings.sourceMode === "url" || this.settings.sourceMode === "youtube") {
-        createInputRow(secSource, this.t("mediaUrl"), "", this.settings.mediaUrl, "https://...", (v) => {
-          this.saveSettings({ mediaUrl: v });
-        });
-        
-        if (this.settings.sourceMode === "youtube") {
-          createWarningBox(secSource, this.t("youtubeWarning"));
-        }
+        const inp = document.createElement("input");
+        inp.className = "bgv-input";
+        inp.type = "text";
+        inp.value = this.settings.mediaUrl || "";
+        inp.addEventListener("input", (e) => this.saveSettings({ mediaUrl: e.target.value }));
+        createRow(this.t("mediaUrl"), "", inp, true);
       } else if (this.settings.sourceMode === "localFile") {
-        createWarningBox(secSource, this.t("localRestartWarning"));
-        createFilePickerRow(secSource, this.t("localFile"), this.t("fileSelectWarning"), (file) => {
+        const fileDiv = document.createElement("div");
+        fileDiv.style.width = "100%";
+        fileDiv.style.maxWidth = "400px";
+        
+        const fileInp = document.createElement("input");
+        fileInp.type = "file";
+        fileInp.accept = "video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp,image/avif";
+        fileInp.style.display = "block";
+        fileInp.addEventListener("change", (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
           if (file.size > this.settings.maxBlobMB * 1024 * 1024) {
             BdApi.UI.showToast(this.t("fileTooLarge"), { type: "error" });
             return;
           }
-          if (this._localFileBlobUrl) {
-            URL.revokeObjectURL(this._localFileBlobUrl);
-          }
+          if (this._localFileBlobUrl) URL.revokeObjectURL(this._localFileBlobUrl);
           this._localFileBlobUrl = URL.createObjectURL(file);
+          
+          let localPath = file.path; // Electron persistence
           const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-          this.saveSettings({ localFileMeta: `${file.name} (${sizeMB} MB)` });
+          
+          this.saveSettings({ 
+             localFilePath: localPath || null, 
+             localFileMeta: `${file.name} (${sizeMB} MB)` 
+          });
           BdApi.UI.showToast(`Selected ${file.name}`, { type: "success" });
           updateRender();
         });
+        fileDiv.appendChild(fileInp);
+
         if (this.settings.localFileMeta) {
-          createInfoBox(secSource, `Selected: ${this.settings.localFileMeta}`);
+          const metaText = document.createElement("div");
+          metaText.className = "bgv-help-text";
+          metaText.textContent = `Selected: ${this.settings.localFileMeta}`;
+          fileDiv.appendChild(metaText);
         }
+        createRow(this.t("localFile"), "", fileDiv, true);
       }
 
-      createSelectRow(secSource, this.t("mediaTypeOverride"), "", [
-        { label: this.t("autoDetect"), value: "auto" },
-        { label: this.t("video"), value: "video" },
-        { label: this.t("image"), value: "image" },
-        { label: this.t("youtube"), value: "youtube" }
-      ], this.settings.mediaType, (v) => {
-        this.saveSettings({ mediaType: v });
-      });
-
-      // 2. Preview / Test
-      const secTest = createSection(this.t("mediaTest"), this.t("descTest"));
-      const btnRow = document.createElement("div");
-      btnRow.style.display = "flex";
-      btnRow.style.gap = "12px";
+      const btnDiv = document.createElement("div");
+      btnDiv.className = "bgv-flex-btns";
       
       const btnApply = document.createElement("button");
       btnApply.className = "bgv-btn";
       btnApply.textContent = this.t("applyReload");
       btnApply.onclick = () => this.updateMediaSource();
+      btnDiv.appendChild(btnApply);
       
+      if (this.settings.sourceMode === "localFile" && (this.settings.localFilePath || this._localFileBlobUrl)) {
+        const btnClearFile = document.createElement("button");
+        btnClearFile.className = "bgv-btn bgv-btn-danger";
+        btnClearFile.textContent = this.t("clearLocalFile");
+        btnClearFile.onclick = () => {
+           if (this._localFileBlobUrl) URL.revokeObjectURL(this._localFileBlobUrl);
+           this._localFileBlobUrl = null;
+           this.saveSettings({ localFilePath: null, localFileMeta: null });
+           BdApi.UI.showToast(this.t("clearFileConfirm"), { type: "success" });
+           updateRender();
+        };
+        btnDiv.appendChild(btnClearFile);
+      }
+      createRow("", "", btnDiv);
+
+      // 2. Appearance
+      createSectionTitle(this.t("appearance"));
+      
+      const buildSlider = (min, max, step, val, onChange, unit = "") => {
+        const cont = document.createElement("div");
+        cont.className = "bgv-slider-container";
+        const sl = document.createElement("input");
+        sl.className = "bgv-slider";
+        sl.type = "range"; sl.min = min; sl.max = max; sl.step = step; sl.value = val;
+        const nu = document.createElement("input");
+        nu.className = "bgv-slider-val";
+        nu.type = "number"; nu.min = min; nu.max = max; nu.step = step; nu.value = val;
+        
+        const sync = (vStr) => {
+          let v = parseFloat(vStr);
+          if (isNaN(v)) return;
+          v = Math.max(min, Math.min(max, v));
+          sl.value = v; nu.value = v; onChange(v);
+        };
+        sl.addEventListener("input", e => sync(e.target.value));
+        nu.addEventListener("change", e => sync(e.target.value));
+        
+        cont.appendChild(sl);
+        cont.appendChild(nu);
+        if (unit) {
+           const u = document.createElement("span");
+           u.textContent = unit;
+           u.style.fontSize = "12px";
+           cont.appendChild(u);
+        }
+        return cont;
+      };
+
+      createRow(this.t("opacity"), "", buildSlider(0, 1, 0.01, this.settings.opacity, v => { this.saveSettings({ opacity: v }); this.applyVisualSettings(); }));
+      createRow(this.t("blur"), "", buildSlider(0, 20, 0.1, this.settings.blur, v => { this.saveSettings({ blur: v }); this.applyVisualSettings(); }, "px"));
+      createRow(this.t("brightness"), "", buildSlider(0, 2, 0.01, this.settings.brightness, v => { this.saveSettings({ brightness: v }); this.applyVisualSettings(); }));
+      createRow(this.t("saturation"), "", buildSlider(0, 3, 0.01, this.settings.saturate, v => { this.saveSettings({ saturate: v }); this.applyVisualSettings(); }));
+
+      const objFitSel = document.createElement("select");
+      objFitSel.className = "bgv-select";
+      [{label: this.t("cover"), value: "cover"}, {label: this.t("contain"), value: "contain"}, {label: this.t("fill"), value: "fill"}].forEach(o => {
+        const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label;
+        if (o.value === this.settings.objectFit) opt.selected = true;
+        objFitSel.appendChild(opt);
+      });
+      objFitSel.addEventListener("change", e => { this.saveSettings({ objectFit: e.target.value }); this.applyVisualSettings(); });
+      createRow(this.t("objectFit"), "", objFitSel);
+
+      const objPosSel = document.createElement("select");
+      objPosSel.className = "bgv-select";
+      [{label: this.t("center"), value: "center"}, {label: this.t("top"), value: "top"}, {label: this.t("bottom"), value: "bottom"}].forEach(o => {
+        const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label;
+        if (o.value === this.settings.objectPosition) opt.selected = true;
+        objPosSel.appendChild(opt);
+      });
+      objPosSel.addEventListener("change", e => { this.saveSettings({ objectPosition: e.target.value }); this.applyVisualSettings(); });
+      createRow(this.t("objectPosition"), "", objPosSel);
+
+      // 3. Playback
+      createSectionTitle(this.t("playback"));
+      
+      const buildSwitch = (val, onChange) => {
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = val; cb.style.transform = "scale(1.2)"; cb.style.cursor = "pointer";
+        cb.addEventListener("change", e => onChange(e.target.checked));
+        return cb;
+      };
+
+      createRow(this.t("autoplay"), "", buildSwitch(this.settings.youtubeAutoplay, v => this.saveSettings({ youtubeAutoplay: v })));
+      createRow(this.t("loop"), "", buildSwitch(this.settings.youtubeLoop, v => this.saveSettings({ youtubeLoop: v })));
+      createRow(this.t("muted"), "", buildSwitch(this.settings.youtubeMuted, v => this.saveSettings({ youtubeMuted: v })));
+
+      // 4. Advanced / Diagnostics
+      createSectionTitle(this.t("advancedDiagnostics"));
+      createRow(this.t("maxLocalFileSize"), "", buildSlider(5, 500, 5, this.settings.maxBlobMB, v => this.saveSettings({ maxBlobMB: v }), "MB"));
+      
+      const rmSel = document.createElement("select");
+      rmSel.className = "bgv-select";
+      [{label: this.t("pauseVideo"), value: "pauseVideo"}, {label: this.t("hideAnimated"), value: "hideAnimated"}, {label: this.t("disableAllMedia"), value: "disableAllMedia"}, {label: this.t("ignore"), value: "ignore"}].forEach(o => {
+        const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label;
+        if (o.value === this.settings.reducedMotionBehavior) opt.selected = true;
+        rmSel.appendChild(opt);
+      });
+      rmSel.addEventListener("change", e => { this.saveSettings({ reducedMotionBehavior: e.target.value }); this.applyReducedMotion(); });
+      createRow(this.t("reducedMotionBehavior"), "", rmSel);
+
+      createRow(this.t("debug"), "", buildSwitch(this.settings.debug, v => this.saveSettings({ debug: v })));
+
       const btnReset = document.createElement("button");
       btnReset.className = "bgv-btn bgv-btn-danger";
       btnReset.textContent = this.t("resetDefaults");
       btnReset.onclick = () => {
-        this.settings = { ...this.defaults, language: this.settings.language };
+        this.settings = { ...this.defaults };
         BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
         this.updateMediaSource();
         updateRender();
       };
-      
-      btnRow.appendChild(btnApply);
-      btnRow.appendChild(btnReset);
-      secTest.appendChild(btnRow);
-
-      // 3. Appearance
-      const secApp = createSection(this.t("appearance"), this.t("descAppearance"));
-      createSelectRow(secApp, this.t("objectFit"), "", [
-        { label: this.t("cover"), value: "cover" },
-        { label: this.t("contain"), value: "contain" },
-        { label: this.t("fill"), value: "fill" }
-      ], this.settings.objectFit, (v) => { this.saveSettings({ objectFit: v }); this.applyVisualSettings(); });
-      
-      createSelectRow(secApp, this.t("objectPosition"), "", [
-        { label: this.t("center"), value: "center" },
-        { label: this.t("top"), value: "top" },
-        { label: this.t("bottom"), value: "bottom" },
-      ], this.settings.objectPosition, (v) => { this.saveSettings({ objectPosition: v }); this.applyVisualSettings(); });
-
-      createSliderRow(secApp, this.t("opacity"), "", 0, 1, 0.01, this.settings.opacity, (v) => { this.saveSettings({ opacity: v }); this.applyVisualSettings(); });
-      createSliderRow(secApp, this.t("blur"), "", 0, 20, 0.1, this.settings.blur, (v) => { this.saveSettings({ blur: v }); this.applyVisualSettings(); }, "px");
-      createSliderRow(secApp, this.t("saturation"), "", 0, 3, 0.01, this.settings.saturate, (v) => { this.saveSettings({ saturate: v }); this.applyVisualSettings(); });
-      createSliderRow(secApp, this.t("brightness"), "", 0, 2, 0.01, this.settings.brightness, (v) => { this.saveSettings({ brightness: v }); this.applyVisualSettings(); });
-
-      // 4. Playback (YouTube)
-      if (this.settings.sourceMode === "youtube" || this.settings.mediaType === "youtube") {
-        const secPlay = createSection(this.t("playback"), this.t("descPlayback"));
-        createSwitchRow(secPlay, this.t("autoplay"), "", this.settings.youtubeAutoplay, (v) => this.saveSettings({ youtubeAutoplay: v }));
-        createSwitchRow(secPlay, this.t("muted"), "", this.settings.youtubeMuted, (v) => this.saveSettings({ youtubeMuted: v }));
-        createSwitchRow(secPlay, this.t("loop"), "", this.settings.youtubeLoop, (v) => this.saveSettings({ youtubeLoop: v }));
-      }
-
-      // 5. Limits & Safety
-      const secAdv = createSection(this.t("limitsSafety"), this.t("descLimits"));
-      createSliderRow(secAdv, this.t("maxLocalFileSize"), "", 5, 500, 5, this.settings.maxBlobMB, (v) => { this.saveSettings({ maxBlobMB: v }); }, "MB");
-      
-      createSelectRow(secAdv, this.t("reducedMotionBehavior"), "", [
-        { label: this.t("pauseVideo"), value: "pauseVideo" },
-        { label: this.t("hideAnimated"), value: "hideAnimated" },
-        { label: this.t("disableAllMedia"), value: "disableAllMedia" },
-        { label: this.t("ignore"), value: "ignore" }
-      ], this.settings.reducedMotionBehavior, (v) => {
-        this.saveSettings({ reducedMotionBehavior: v });
-        this.applyReducedMotion();
-      });
-
-      // 6. Diagnostics
-      const secDiag = createSection(this.t("diagnostics"), this.t("descDiag"));
-      let diagInfo = `Mode: ${this.settings.sourceMode}\n`;
-      let mediaType = this.settings.mediaType === 'auto' ? this.guessMediaType(this.settings.mediaUrl) : this.settings.mediaType;
-      diagInfo += `Detected Type: ${mediaType}\n`;
-      if (mediaType === "youtube") {
-         diagInfo += `YouTube ID: ${this.parseYouTubeVideoId(this.settings.mediaUrl) || 'None'}\n`;
-      }
-      diagInfo += `WebP Support: ${this._isWebPSupportedCache !== null ? this._isWebPSupportedCache : 'Pending'}`;
-      createInfoBox(secDiag, diagInfo);
-      
-      createSwitchRow(secDiag, this.t("debug"), "", this.settings.debug, (v) => this.saveSettings({ debug: v }));
+      createRow("", "", btnReset);
     };
 
     updateRender();
