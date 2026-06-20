@@ -1,8 +1,8 @@
 /**
  * @name BgVideo
- * @author Foki (Refactored)
+ * @author Foki
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 2.0.0
+ * @version １.0
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
