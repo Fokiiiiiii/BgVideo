@@ -7,12 +7,136 @@
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
 
+const STRINGS = {
+  en: {
+    source: "Source",
+    mediaTest: "Media Test",
+    appearance: "Appearance",
+    playback: "Playback",
+    limitsSafety: "Limits & Safety",
+    diagnostics: "Diagnostics",
+    mediaUrl: "Media URL",
+    sourceMode: "Source Mode",
+    localFile: "Local File",
+    youtube: "YouTube",
+    testMedia: "Test Media",
+    applyReload: "Apply / Reload Media",
+    clearLocalFile: "Clear Local File",
+    resetDefaults: "Reset to Defaults",
+    maxLocalFileSize: "Maximum local file size",
+    opacity: "Opacity",
+    blur: "Blur",
+    brightness: "Brightness",
+    saturation: "Saturation",
+    objectFit: "Object Fit",
+    objectPosition: "Object Position",
+    autoplay: "Autoplay",
+    loop: "Loop",
+    muted: "Muted",
+    debug: "Debug",
+    status: "Status",
+    descSource: "Select where your media comes from.",
+    descTest: "Apply changes immediately.",
+    descAppearance: "Adjust visual settings.",
+    descPlayback: "Options sent to YouTube iframe.",
+    descLimits: "Reduced motion and local bounds.",
+    descDiag: "Status reporting.",
+    remoteUrl: "Remote URL",
+    youtubeWarning: "YouTube playback is a best-effort iframe renderer. Autoplay, loops, and embeds depend entirely on YouTube policies. Some videos cannot be embedded.",
+    localRestartWarning: "Local files are loaded directly from disk. You MUST re-select the file after restarting Discord/BetterDiscord.",
+    fileTooLarge: "File is too large. Increase the limit or choose a smaller file.",
+    invalidUrl: "Invalid URL.",
+    unsupportedMedia: "Unsupported media type.",
+    webpFailed: "WebP failed to load in this Discord/Electron environment. Try PNG, JPG, GIF, MP4, or WebM.",
+    autoDetect: "Auto Detect",
+    video: "Video",
+    image: "Image",
+    cover: "Cover",
+    contain: "Contain",
+    fill: "Fill",
+    center: "Center",
+    top: "Top",
+    bottom: "Bottom",
+    showControls: "Show Controls",
+    pauseVideo: "Pause Video",
+    hideAnimated: "Hide Animated/Media",
+    disableAllMedia: "Disable All Media",
+    ignore: "Ignore",
+    mediaTypeOverride: "Media Type Override",
+    reducedMotionBehavior: "Reduced Motion Behavior",
+    language: "Language",
+    languageDesc: "UI Language",
+    fileSelectWarning: "Supported: mp4, webm, png, jpg, gif, webp."
+  },
+  ja: {
+    source: "ソース",
+    mediaTest: "メディアテスト",
+    appearance: "表示",
+    playback: "再生",
+    limitsSafety: "上限と安全性",
+    diagnostics: "診断",
+    mediaUrl: "メディアURL",
+    sourceMode: "ソース種別",
+    localFile: "ローカルファイル",
+    youtube: "YouTube",
+    testMedia: "メディアをテスト",
+    applyReload: "適用 / 再読み込み",
+    clearLocalFile: "ローカルファイルを解除",
+    resetDefaults: "初期設定に戻す",
+    maxLocalFileSize: "ローカルファイル最大サイズ",
+    opacity: "不透明度",
+    blur: "ぼかし",
+    brightness: "明るさ",
+    saturation: "彩度",
+    objectFit: "表示方法",
+    objectPosition: "表示位置",
+    autoplay: "自動再生",
+    loop: "ループ",
+    muted: "ミュート",
+    debug: "デバッグ",
+    status: "状態",
+    descSource: "メディアの取得元を選択します。",
+    descTest: "変更を直ちに適用します。",
+    descAppearance: "視覚的な設定を調整します。",
+    descPlayback: "YouTubeのiframeへ送信するオプション。",
+    descLimits: "視差効果の低減とローカルファイルの上限。",
+    descDiag: "状態のレポート。",
+    remoteUrl: "リモートURL",
+    youtubeWarning: "YouTubeの再生はベストエフォートなiframeレンダリングです。自動再生、ループ、埋め込み機能はYouTubeのポリシーに依存します。一部の動画は埋め込みできません。",
+    localRestartWarning: "ローカルファイルは直接ディスクから読み込まれます。Discord/BetterDiscordを再起動した後は再選択が必須です。",
+    fileTooLarge: "ファイルサイズが上限を超えています。上限を上げるか、より小さいファイルを選択してください。",
+    invalidUrl: "無効なURLです。",
+    unsupportedMedia: "サポートされていないメディア形式です。",
+    webpFailed: "このDiscord/Electron環境ではWebPの読み込みに失敗しました。PNG、JPG、GIF、MP4、またはWebMをお試しください。",
+    autoDetect: "自動検出",
+    video: "動画",
+    image: "画像",
+    cover: "カバー (Cover)",
+    contain: "コンテイン (Contain)",
+    fill: "フィル (Fill)",
+    center: "中央",
+    top: "上部",
+    bottom: "下部",
+    showControls: "コントロールを表示",
+    pauseVideo: "動画を一時停止",
+    hideAnimated: "アニメーション/メディアを非表示",
+    disableAllMedia: "すべてのメディアを無効化",
+    ignore: "無視",
+    mediaTypeOverride: "メディア種別オーバーライド",
+    reducedMotionBehavior: "視差効果を減らす際の動作",
+    language: "言語",
+    languageDesc: "UI言語設定",
+    fileSelectWarning: "対応形式: mp4, webm, png, jpg, gif, webp"
+  }
+};
+
 module.exports = class BgVideo {
   constructor() {
     this.PLUGIN_NAME = "BgVideo";
     this.PANEL_STYLE_ID = `${this.PLUGIN_NAME}-panel`;
 
     this.defaults = {
+      language: "auto", // auto, en, ja
       sourceMode: "url", // url, localFile, youtube
       mediaType: "auto", // auto, video, image, youtube
       mediaUrl: "https://raw.githubusercontent.com/Fokiiiiiii/disocrd-Thema/main/Grievous_Lady_2.5_.mp4",
@@ -44,6 +168,20 @@ module.exports = class BgVideo {
     this._onMotionChange = null;
     this._isWebPSupportedCache = null;
     this._toastCooldowns = new Set();
+    
+    this._onVisibilityOrFocus = this._onVisibilityOrFocus.bind(this);
+  }
+
+  // --- I18N ---
+
+  t(key) {
+    let lang = this.settings.language;
+    if (lang === "auto") {
+      const navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+      lang = navLang.startsWith("ja") ? "ja" : "en";
+    }
+    const dict = STRINGS[lang] || STRINGS.en;
+    return dict[key] || STRINGS.en[key] || key;
   }
 
   // --- SETTINGS MANAGEMENT ---
@@ -130,11 +268,10 @@ module.exports = class BgVideo {
       // YouTube loop requires playlist param for single video
       params.append("playlist", playlistId || videoId);
     }
-    params.append("controls", controls ? "1" : "0");
+    params.append("controls", "0"); // Force controls off for background playback
     if (start > 0) params.append("start", Math.floor(start).toString());
     params.append("playsinline", "1");
     params.append("rel", "0");
-    // modestbranding is largely deprecated but doesn't hurt
     params.append("modestbranding", "1");
     
     return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
@@ -225,6 +362,7 @@ module.exports = class BgVideo {
       node.style.display = "";
       if (node.tagName === "VIDEO") {
         try { node.play(); } catch {}
+        this._reassertNoControls();
       }
     }
   }
@@ -267,7 +405,7 @@ module.exports = class BgVideo {
       if (this._localFileBlobUrl) {
         sourceUrl = this._localFileBlobUrl;
       } else {
-        this.toast("Local file must be reselected after restart.", "error");
+        this.toast(this.t("localRestartWarning"), "error");
         return;
       }
     } else if (this.settings.sourceMode === "youtube") {
@@ -283,7 +421,7 @@ module.exports = class BgVideo {
     if (mediaType === "youtube" || this.settings.sourceMode === "youtube") {
       const videoId = this.parseYouTubeVideoId(sourceUrl);
       if (!videoId) {
-        this.toast("Invalid YouTube URL.", "error");
+        this.toast(this.t("invalidUrl"), "error");
         return;
       }
       this._mediaNode = this.createYouTubeRenderer(videoId, sourceUrl);
@@ -293,19 +431,20 @@ module.exports = class BgVideo {
       if (sourceUrl.toLowerCase().endsWith(".webp")) {
         const supported = await this.checkWebPSupport();
         if (!supported) {
-          this.toast("WebP failed to load in this Discord/Electron environment. Try PNG, JPG, GIF, MP4, or WebM.", "error");
+          this.toast(this.t("webpFailed"), "error");
           return;
         }
       }
       this._mediaNode = this.createImageRenderer(sourceUrl);
     } else {
-      this.toast("Unsupported media type.", "error");
+      this.toast(this.t("unsupportedMedia"), "error");
       return;
     }
 
     wrapper.appendChild(this._mediaNode);
     this.applyVisualSettings();
     this.applyReducedMotion();
+    this._reassertNoControls();
   }
 
   createVideoRenderer(src) {
@@ -316,7 +455,10 @@ module.exports = class BgVideo {
     v.muted = true;
     v.playsInline = true;
     v.controls = false;
+    v.removeAttribute("controls");
     v.crossOrigin = "anonymous";
+    v.tabIndex = -1;
+    v.setAttribute("aria-hidden", "true");
     v.src = src;
 
     v.addEventListener("error", () => {
@@ -331,6 +473,8 @@ module.exports = class BgVideo {
     img.id = "bgVideo-media";
     img.src = src;
     img.crossOrigin = "anonymous";
+    img.tabIndex = -1;
+    img.setAttribute("aria-hidden", "true");
     
     img.addEventListener("error", () => {
       this.toast(`Image failed to load.`, "error");
@@ -343,6 +487,9 @@ module.exports = class BgVideo {
     iframe.id = "bgVideo-media";
     iframe.setAttribute("frameborder", "0");
     iframe.setAttribute("allow", "autoplay; encrypted-media");
+    iframe.tabIndex = -1;
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.pointerEvents = "none";
     
     const playlistId = this.parseYouTubePlaylistId(originalUrl);
     
@@ -353,7 +500,7 @@ module.exports = class BgVideo {
       loop: this.settings.youtubeLoop,
       mute: this.settings.youtubeMuted,
       autoplay: this.settings.youtubeAutoplay,
-      controls: this.settings.youtubeControls
+      controls: false // Enforce false for background
     });
 
     return iframe;
@@ -369,7 +516,9 @@ module.exports = class BgVideo {
         inset: 0;
         width: 100vw;
         height: 100vh;
-        pointer-events: none;
+        pointer-events: none !important;
+        user-select: none !important;
+        -webkit-user-drag: none !important;
         z-index: 0;
         opacity: ${s.opacity};
         filter: blur(${s.blur}px) saturate(${s.saturate}) brightness(${s.brightness});
@@ -382,10 +531,22 @@ module.exports = class BgVideo {
         height: 100%;
         object-fit: ${s.objectFit};
         object-position: ${s.objectPosition};
+        pointer-events: none !important;
       }
       /* Approximate object-fit for iframes since it isn't fully supported natively by iframes */
       iframe#bgVideo-media {
         ${s.objectFit === 'cover' ? 'width: 150vw; height: 150vh; left: -25vw; top: -25vh; position: absolute;' : ''}
+      }
+      /* Aggressively hide native video controls */
+      video#bgVideo-media::-webkit-media-controls,
+      video#bgVideo-media::-webkit-media-controls-enclosure,
+      video#bgVideo-media::-webkit-media-controls-panel,
+      video#bgVideo-media::-webkit-media-controls-play-button,
+      video#bgVideo-media::-webkit-media-controls-start-playback-button {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        -webkit-appearance: none !important;
       }
       #app-mount { position: relative; z-index: 1; background: transparent; }
     `;
@@ -401,15 +562,47 @@ module.exports = class BgVideo {
     }
   }
 
+  // --- FOCUS & VISIBILITY HANDLERS ---
+
+  _onVisibilityOrFocus() {
+    this._reassertNoControls();
+  }
+
+  _reassertNoControls() {
+    const node = this._mediaNode;
+    if (!node) return;
+    
+    if (node.tagName === "VIDEO") {
+      node.controls = false;
+      node.removeAttribute("controls");
+      if (node.paused && !this.shouldReduceMotion()) {
+        try { node.play(); } catch {}
+      }
+    }
+    
+    if (node.tagName === "IFRAME") {
+      node.style.pointerEvents = "none";
+    }
+    
+    const wrapper = document.getElementById("bgVideo-wrapper");
+    if (wrapper) {
+      wrapper.style.pointerEvents = "none";
+    }
+  }
+
   // --- LIFECYCLE ---
 
   start() {
     this.attachReducedMotionHandler();
     this.updateMediaSource();
+    document.addEventListener("visibilitychange", this._onVisibilityOrFocus);
+    window.addEventListener("focus", this._onVisibilityOrFocus);
   }
 
   stop() {
     this.detachReducedMotionHandler();
+    document.removeEventListener("visibilitychange", this._onVisibilityOrFocus);
+    window.removeEventListener("focus", this._onVisibilityOrFocus);
     this.destroyRenderer();
     const wrapper = document.getElementById("bgVideo-wrapper");
     if (wrapper) wrapper.remove();
@@ -428,25 +621,30 @@ module.exports = class BgVideo {
       BdApi.DOM.addStyle(
         this.PANEL_STYLE_ID,
         `
-        .bgv-settings-wrap { padding: 10px; color: var(--text-normal); font-family: var(--font-primary); }
-        .bgv-section { margin-bottom: 24px; padding: 16px; background: var(--background-secondary); border-radius: 8px; border: 1px solid var(--background-tertiary); }
-        .bgv-section-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; color: var(--header-primary); }
-        .bgv-section-desc { font-size: 14px; margin-bottom: 16px; color: var(--header-secondary); }
-        .bgv-row { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
-        .bgv-row-col { flex-direction: column; align-items: flex-start; }
-        .bgv-label { font-size: 14px; font-weight: 600; color: var(--header-primary); margin-bottom: 8px; }
-        .bgv-desc { font-size: 12px; color: var(--header-secondary); }
-        .bgv-input { width: 100%; padding: 10px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); margin-top: 8px; }
-        .bgv-select { width: 100%; padding: 10px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); margin-top: 8px; }
-        .bgv-slider-container { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 8px; }
-        .bgv-slider { flex: 1; }
-        .bgv-btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; border: none; background: var(--brand-experiment); color: #fff; transition: opacity 0.2s; }
-        .bgv-btn:hover { opacity: 0.8; }
+        .bgv-settings-wrap { padding: 8px; color: var(--text-normal); font-family: var(--font-primary); }
+        .bgv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--background-modifier-accent); }
+        .bgv-header-title { font-size: 20px; font-weight: 800; color: var(--header-primary); }
+        .bgv-header-desc { font-size: 14px; color: var(--header-secondary); margin-top: 4px; }
+        .bgv-section { margin-bottom: 16px; padding: 16px; background: var(--background-secondary); border-radius: 8px; border: 1px solid var(--background-modifier-accent); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .bgv-section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; color: var(--header-secondary); letter-spacing: 0.5px; }
+        .bgv-section-desc { font-size: 13px; margin-bottom: 16px; color: var(--text-muted); }
+        .bgv-row { margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .bgv-row-col { flex-direction: column; align-items: stretch; gap: 8px; }
+        .bgv-label-container { flex: 1; min-width: 0; }
+        .bgv-label { font-size: 14px; font-weight: 600; color: var(--header-primary); }
+        .bgv-desc { font-size: 13px; color: var(--header-secondary); margin-top: 2px; }
+        .bgv-input { width: 100%; padding: 8px 12px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); box-sizing: border-box; }
+        .bgv-select { width: 100%; padding: 8px 12px; background: var(--input-background); border: 1px solid var(--input-background); border-radius: 4px; color: var(--text-normal); cursor: pointer; box-sizing: border-box; }
+        .bgv-slider-container { display: flex; align-items: center; gap: 12px; width: 100%; }
+        .bgv-slider { flex: 1; cursor: pointer; accent-color: var(--brand-experiment); }
+        .bgv-slider-val { font-family: var(--font-code); font-size: 13px; background: var(--background-primary); padding: 4px 8px; border-radius: 4px; min-width: 48px; text-align: center; border: 1px solid var(--background-modifier-accent); }
+        .bgv-btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; border: none; background: var(--brand-experiment); color: #fff; transition: background-color 0.2s, opacity 0.2s; font-size: 14px; }
+        .bgv-btn:hover { background: var(--brand-experiment-560); }
         .bgv-btn-danger { background: var(--button-danger-background); }
-        .bgv-btn-secondary { background: var(--background-primary); border: 1px solid var(--background-tertiary); color: var(--text-normal); }
-        .bgv-box { padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
-        .bgv-box-info { background: rgba(88, 101, 242, 0.1); border-left: 4px solid var(--brand-experiment); }
-        .bgv-box-warn { background: rgba(250, 166, 26, 0.1); border-left: 4px solid var(--text-warning); }
+        .bgv-btn-danger:hover { background: var(--button-danger-background-hover); }
+        .bgv-box { padding: 12px; border-radius: 4px; margin-bottom: 14px; font-size: 13px; line-height: 1.4; }
+        .bgv-box-info { background: var(--background-message-hover); border-left: 4px solid var(--brand-experiment); color: var(--text-normal); }
+        .bgv-box-warn { background: rgba(250, 166, 26, 0.1); border-left: 4px solid var(--text-warning); color: var(--text-normal); }
         `
       );
       this._panelCssMounted = true;
@@ -455,7 +653,49 @@ module.exports = class BgVideo {
     const wrap = document.createElement("div");
     wrap.className = "bgv-settings-wrap";
 
-    // --- HELPERS ---
+    // --- UI HELPERS ---
+    const createHeader = () => {
+      const header = document.createElement("div");
+      header.className = "bgv-header";
+      
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "bgv-header-title";
+      title.textContent = this.PLUGIN_NAME;
+      const desc = document.createElement("div");
+      desc.className = "bgv-header-desc";
+      desc.textContent = "Background Media Loop";
+      left.appendChild(title);
+      left.appendChild(desc);
+      header.appendChild(left);
+      
+      const right = document.createElement("div");
+      const langSel = document.createElement("select");
+      langSel.className = "bgv-select";
+      langSel.style.width = "auto";
+      langSel.style.padding = "4px 8px";
+      
+      [
+        { value: "auto", label: "Language: Auto" },
+        { value: "en", label: "English" },
+        { value: "ja", label: "日本語" }
+      ].forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (opt.value === this.settings.language) option.selected = true;
+        langSel.appendChild(option);
+      });
+      langSel.addEventListener("change", (e) => {
+        this.saveSettings({ language: e.target.value });
+        updateRender();
+      });
+      right.appendChild(langSel);
+      header.appendChild(right);
+      
+      wrap.appendChild(header);
+    };
+
     const createSection = (titleText, descText) => {
       const section = document.createElement("div");
       section.className = "bgv-section";
@@ -489,21 +729,26 @@ module.exports = class BgVideo {
       parent.appendChild(box);
     };
 
-    const createSelectRow = (parent, labelText, descText, options, value, onChange) => {
-      const row = document.createElement("div");
-      row.className = "bgv-row bgv-row-col";
-      
+    const createLabelContainer = (labelText, descText) => {
+      const lblCont = document.createElement("div");
+      lblCont.className = "bgv-label-container";
       const lbl = document.createElement("div");
       lbl.className = "bgv-label";
       lbl.textContent = labelText;
-      row.appendChild(lbl);
-
+      lblCont.appendChild(lbl);
       if (descText) {
         const desc = document.createElement("div");
         desc.className = "bgv-desc";
         desc.textContent = descText;
-        row.appendChild(desc);
+        lblCont.appendChild(desc);
       }
+      return lblCont;
+    };
+
+    const createSelectRow = (parent, labelText, descText, options, value, onChange) => {
+      const row = document.createElement("div");
+      row.className = "bgv-row bgv-row-col";
+      row.appendChild(createLabelContainer(labelText, descText));
 
       const sel = document.createElement("select");
       sel.className = "bgv-select";
@@ -524,18 +769,7 @@ module.exports = class BgVideo {
     const createInputRow = (parent, labelText, descText, value, placeholder, onChange) => {
       const row = document.createElement("div");
       row.className = "bgv-row bgv-row-col";
-      
-      const lbl = document.createElement("div");
-      lbl.className = "bgv-label";
-      lbl.textContent = labelText;
-      row.appendChild(lbl);
-
-      if (descText) {
-        const desc = document.createElement("div");
-        desc.className = "bgv-desc";
-        desc.textContent = descText;
-        row.appendChild(desc);
-      }
+      row.appendChild(createLabelContainer(labelText, descText));
 
       const inp = document.createElement("input");
       inp.className = "bgv-input";
@@ -549,21 +783,10 @@ module.exports = class BgVideo {
       return inp;
     };
 
-    const createSliderRow = (parent, labelText, descText, min, max, step, value, onChange) => {
+    const createSliderRow = (parent, labelText, descText, min, max, step, value, onChange, unit = "") => {
       const row = document.createElement("div");
       row.className = "bgv-row bgv-row-col";
-      
-      const lbl = document.createElement("div");
-      lbl.className = "bgv-label";
-      lbl.textContent = labelText;
-      row.appendChild(lbl);
-
-      if (descText) {
-        const desc = document.createElement("div");
-        desc.className = "bgv-desc";
-        desc.textContent = descText;
-        row.appendChild(desc);
-      }
+      row.appendChild(createLabelContainer(labelText, descText));
 
       const container = document.createElement("div");
       container.className = "bgv-slider-container";
@@ -576,16 +799,36 @@ module.exports = class BgVideo {
       slider.step = step;
       slider.value = value;
 
-      const valDisp = document.createElement("span");
-      valDisp.textContent = value;
+      const numInput = document.createElement("input");
+      numInput.className = "bgv-slider-val";
+      numInput.type = "number";
+      numInput.min = min;
+      numInput.max = max;
+      numInput.step = step;
+      numInput.value = value;
+      numInput.style.width = "70px";
 
-      slider.addEventListener("input", (e) => {
-        valDisp.textContent = e.target.value;
-        onChange(parseFloat(e.target.value));
-      });
+      const syncVal = (valStr) => {
+        let v = parseFloat(valStr);
+        if (isNaN(v)) return;
+        v = Math.max(min, Math.min(max, v));
+        slider.value = v;
+        numInput.value = v;
+        onChange(v);
+      };
+
+      slider.addEventListener("input", (e) => syncVal(e.target.value));
+      numInput.addEventListener("change", (e) => syncVal(e.target.value));
 
       container.appendChild(slider);
-      container.appendChild(valDisp);
+      container.appendChild(numInput);
+      if (unit) {
+        const u = document.createElement("span");
+        u.textContent = unit;
+        u.style.fontSize = "13px";
+        u.style.color = "var(--header-secondary)";
+        container.appendChild(u);
+      }
       row.appendChild(container);
 
       parent.appendChild(row);
@@ -595,26 +838,13 @@ module.exports = class BgVideo {
     const createSwitchRow = (parent, labelText, descText, value, onChange) => {
       const row = document.createElement("div");
       row.className = "bgv-row";
-      
-      const textCol = document.createElement("div");
-      const lbl = document.createElement("div");
-      lbl.className = "bgv-label";
-      lbl.style.marginBottom = "4px";
-      lbl.textContent = labelText;
-      textCol.appendChild(lbl);
-
-      if (descText) {
-        const desc = document.createElement("div");
-        desc.className = "bgv-desc";
-        desc.textContent = descText;
-        textCol.appendChild(desc);
-      }
-      row.appendChild(textCol);
+      row.appendChild(createLabelContainer(labelText, descText));
 
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = value;
-      cb.style.transform = "scale(1.5)";
+      cb.style.transform = "scale(1.3)";
+      cb.style.cursor = "pointer";
       cb.addEventListener("change", (e) => onChange(e.target.checked));
       row.appendChild(cb);
 
@@ -625,23 +855,13 @@ module.exports = class BgVideo {
     const createFilePickerRow = (parent, labelText, descText, onFileChange) => {
       const row = document.createElement("div");
       row.className = "bgv-row bgv-row-col";
-      
-      const lbl = document.createElement("div");
-      lbl.className = "bgv-label";
-      lbl.textContent = labelText;
-      row.appendChild(lbl);
-
-      if (descText) {
-        const desc = document.createElement("div");
-        desc.className = "bgv-desc";
-        desc.textContent = descText;
-        row.appendChild(desc);
-      }
+      row.appendChild(createLabelContainer(labelText, descText));
 
       const inp = document.createElement("input");
       inp.type = "file";
       inp.accept = "video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp,image/avif";
-      inp.style.marginTop = "8px";
+      inp.className = "bgv-input";
+      inp.style.padding = "6px";
       
       inp.addEventListener("change", (e) => {
         const file = e.target.files[0];
@@ -656,74 +876,74 @@ module.exports = class BgVideo {
     };
 
     const updateRender = () => {
-      wrap.innerHTML = ""; // Re-render logic
+      wrap.innerHTML = "";
+      createHeader();
 
       // 1. Source
-      const secSource = createSection("Source", "Select where your media comes from.");
-      createSelectRow(secSource, "Source Mode", "", [
-        { label: "Remote URL", value: "url" },
-        { label: "Local File", value: "localFile" },
-        { label: "YouTube", value: "youtube" }
+      const secSource = createSection(this.t("source"), this.t("descSource"));
+      createSelectRow(secSource, this.t("sourceMode"), "", [
+        { label: this.t("remoteUrl"), value: "url" },
+        { label: this.t("localFile"), value: "localFile" },
+        { label: this.t("youtube"), value: "youtube" }
       ], this.settings.sourceMode, (v) => {
         this.saveSettings({ sourceMode: v });
         updateRender();
       });
 
       if (this.settings.sourceMode === "url" || this.settings.sourceMode === "youtube") {
-        createInputRow(secSource, "Media URL", "Link to video/image or YouTube video.", this.settings.mediaUrl, "https://...", (v) => {
+        createInputRow(secSource, this.t("mediaUrl"), "", this.settings.mediaUrl, "https://...", (v) => {
           this.saveSettings({ mediaUrl: v });
         });
         
         if (this.settings.sourceMode === "youtube") {
-          createWarningBox(secSource, "YouTube playback is a best-effort iframe renderer. Autoplay, loops, and embeds depend entirely on YouTube policies. Some videos cannot be embedded.");
+          createWarningBox(secSource, this.t("youtubeWarning"));
         }
       } else if (this.settings.sourceMode === "localFile") {
-        createWarningBox(secSource, "Local files are loaded directly from disk. You MUST re-select the file after restarting Discord/BetterDiscord.");
-        createFilePickerRow(secSource, "Select Local Media", `Supported: mp4, webm, png, jpg, gif, webp. Max: ${this.settings.maxBlobMB}MB`, (file) => {
+        createWarningBox(secSource, this.t("localRestartWarning"));
+        createFilePickerRow(secSource, this.t("localFile"), this.t("fileSelectWarning"), (file) => {
           if (file.size > this.settings.maxBlobMB * 1024 * 1024) {
-            BdApi.UI.showToast(`File exceeds ${this.settings.maxBlobMB}MB limit`, { type: "error" });
+            BdApi.UI.showToast(this.t("fileTooLarge"), { type: "error" });
             return;
           }
           if (this._localFileBlobUrl) {
             URL.revokeObjectURL(this._localFileBlobUrl);
           }
           this._localFileBlobUrl = URL.createObjectURL(file);
-          this.saveSettings({ localFileMeta: file.name });
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+          this.saveSettings({ localFileMeta: `${file.name} (${sizeMB} MB)` });
           BdApi.UI.showToast(`Selected ${file.name}`, { type: "success" });
           updateRender();
         });
         if (this.settings.localFileMeta) {
-          createInfoBox(secSource, `Last selected: ${this.settings.localFileMeta}`);
+          createInfoBox(secSource, `Selected: ${this.settings.localFileMeta}`);
         }
       }
 
-      createSelectRow(secSource, "Media Type Override", "Force specific renderer if auto-detection fails.", [
-        { label: "Auto Detect", value: "auto" },
-        { label: "Video", value: "video" },
-        { label: "Image", value: "image" },
-        { label: "YouTube", value: "youtube" }
+      createSelectRow(secSource, this.t("mediaTypeOverride"), "", [
+        { label: this.t("autoDetect"), value: "auto" },
+        { label: this.t("video"), value: "video" },
+        { label: this.t("image"), value: "image" },
+        { label: this.t("youtube"), value: "youtube" }
       ], this.settings.mediaType, (v) => {
         this.saveSettings({ mediaType: v });
       });
 
       // 2. Preview / Test
-      const secTest = createSection("Apply & Test", "Apply changes immediately.");
+      const secTest = createSection(this.t("mediaTest"), this.t("descTest"));
       const btnRow = document.createElement("div");
       btnRow.style.display = "flex";
-      btnRow.style.gap = "10px";
+      btnRow.style.gap = "12px";
       
       const btnApply = document.createElement("button");
       btnApply.className = "bgv-btn";
-      btnApply.textContent = "Apply & Reload Media";
-      btnApply.onclick = () => {
-        this.updateMediaSource();
-      };
+      btnApply.textContent = this.t("applyReload");
+      btnApply.onclick = () => this.updateMediaSource();
       
       const btnReset = document.createElement("button");
       btnReset.className = "bgv-btn bgv-btn-danger";
-      btnReset.textContent = "Reset to Defaults";
+      btnReset.textContent = this.t("resetDefaults");
       btnReset.onclick = () => {
-        this.settings = { ...this.defaults };
+        this.settings = { ...this.defaults, language: this.settings.language };
         BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
         this.updateMediaSource();
         updateRender();
@@ -734,51 +954,58 @@ module.exports = class BgVideo {
       secTest.appendChild(btnRow);
 
       // 3. Appearance
-      const secApp = createSection("Appearance", "Adjust visual settings.");
-      createSelectRow(secApp, "Object Fit", "How the media scales.", [
-        { label: "Cover", value: "cover" },
-        { label: "Contain", value: "contain" },
-        { label: "Fill", value: "fill" }
+      const secApp = createSection(this.t("appearance"), this.t("descAppearance"));
+      createSelectRow(secApp, this.t("objectFit"), "", [
+        { label: this.t("cover"), value: "cover" },
+        { label: this.t("contain"), value: "contain" },
+        { label: this.t("fill"), value: "fill" }
       ], this.settings.objectFit, (v) => { this.saveSettings({ objectFit: v }); this.applyVisualSettings(); });
       
-      createSelectRow(secApp, "Object Position", "Alignment inside window.", [
-        { label: "Center", value: "center" },
-        { label: "Top", value: "top" },
-        { label: "Bottom", value: "bottom" },
+      createSelectRow(secApp, this.t("objectPosition"), "", [
+        { label: this.t("center"), value: "center" },
+        { label: this.t("top"), value: "top" },
+        { label: this.t("bottom"), value: "bottom" },
       ], this.settings.objectPosition, (v) => { this.saveSettings({ objectPosition: v }); this.applyVisualSettings(); });
 
-      createSliderRow(secApp, "Opacity", "", 0, 1, 0.01, this.settings.opacity, (v) => { this.saveSettings({ opacity: v }); this.applyVisualSettings(); });
-      createSliderRow(secApp, "Blur (px)", "", 0, 20, 0.1, this.settings.blur, (v) => { this.saveSettings({ blur: v }); this.applyVisualSettings(); });
-      createSliderRow(secApp, "Saturate", "", 0, 3, 0.01, this.settings.saturate, (v) => { this.saveSettings({ saturate: v }); this.applyVisualSettings(); });
-      createSliderRow(secApp, "Brightness", "", 0, 2, 0.01, this.settings.brightness, (v) => { this.saveSettings({ brightness: v }); this.applyVisualSettings(); });
+      createSliderRow(secApp, this.t("opacity"), "", 0, 1, 0.01, this.settings.opacity, (v) => { this.saveSettings({ opacity: v }); this.applyVisualSettings(); });
+      createSliderRow(secApp, this.t("blur"), "", 0, 20, 0.1, this.settings.blur, (v) => { this.saveSettings({ blur: v }); this.applyVisualSettings(); }, "px");
+      createSliderRow(secApp, this.t("saturation"), "", 0, 3, 0.01, this.settings.saturate, (v) => { this.saveSettings({ saturate: v }); this.applyVisualSettings(); });
+      createSliderRow(secApp, this.t("brightness"), "", 0, 2, 0.01, this.settings.brightness, (v) => { this.saveSettings({ brightness: v }); this.applyVisualSettings(); });
 
       // 4. Playback (YouTube)
       if (this.settings.sourceMode === "youtube" || this.settings.mediaType === "youtube") {
-        const secPlay = createSection("YouTube Playback", "Options sent to YouTube iframe.");
-        createSwitchRow(secPlay, "Autoplay", "", this.settings.youtubeAutoplay, (v) => this.saveSettings({ youtubeAutoplay: v }));
-        createSwitchRow(secPlay, "Muted", "Autoplay generally requires being muted.", this.settings.youtubeMuted, (v) => this.saveSettings({ youtubeMuted: v }));
-        createSwitchRow(secPlay, "Loop", "Best effort loop.", this.settings.youtubeLoop, (v) => this.saveSettings({ youtubeLoop: v }));
-        createSwitchRow(secPlay, "Show Controls", "", this.settings.youtubeControls, (v) => this.saveSettings({ youtubeControls: v }));
+        const secPlay = createSection(this.t("playback"), this.t("descPlayback"));
+        createSwitchRow(secPlay, this.t("autoplay"), "", this.settings.youtubeAutoplay, (v) => this.saveSettings({ youtubeAutoplay: v }));
+        createSwitchRow(secPlay, this.t("muted"), "", this.settings.youtubeMuted, (v) => this.saveSettings({ youtubeMuted: v }));
+        createSwitchRow(secPlay, this.t("loop"), "", this.settings.youtubeLoop, (v) => this.saveSettings({ youtubeLoop: v }));
       }
 
-      // 5. Advanced
-      const secAdv = createSection("Advanced", "Reduced motion and bounds.");
-      createSelectRow(secAdv, "Reduced Motion Behavior", "What to do when system prefers reduced motion.", [
-        { label: "Pause Video", value: "pauseVideo" },
-        { label: "Hide Animated/Media", value: "hideAnimated" },
-        { label: "Disable All Media", value: "disableAllMedia" },
-        { label: "Ignore", value: "ignore" }
+      // 5. Limits & Safety
+      const secAdv = createSection(this.t("limitsSafety"), this.t("descLimits"));
+      createSliderRow(secAdv, this.t("maxLocalFileSize"), "", 5, 500, 5, this.settings.maxBlobMB, (v) => { this.saveSettings({ maxBlobMB: v }); }, "MB");
+      
+      createSelectRow(secAdv, this.t("reducedMotionBehavior"), "", [
+        { label: this.t("pauseVideo"), value: "pauseVideo" },
+        { label: this.t("hideAnimated"), value: "hideAnimated" },
+        { label: this.t("disableAllMedia"), value: "disableAllMedia" },
+        { label: this.t("ignore"), value: "ignore" }
       ], this.settings.reducedMotionBehavior, (v) => {
         this.saveSettings({ reducedMotionBehavior: v });
         this.applyReducedMotion();
       });
 
       // 6. Diagnostics
-      const secDiag = createSection("Diagnostics", "Status reporting.");
-      createInfoBox(secDiag, `Source Mode: ${this.settings.sourceMode}
-Calculated Type: ${this.settings.mediaType === 'auto' ? this.guessMediaType(this.settings.mediaUrl) : this.settings.mediaType}
-WebP Cached Check: ${this._isWebPSupportedCache !== null ? this._isWebPSupportedCache : 'Pending'}`);
-      createSwitchRow(secDiag, "Debug Logging", "Enable console logs.", this.settings.debug, (v) => this.saveSettings({ debug: v }));
+      const secDiag = createSection(this.t("diagnostics"), this.t("descDiag"));
+      let diagInfo = `Mode: ${this.settings.sourceMode}\n`;
+      let mediaType = this.settings.mediaType === 'auto' ? this.guessMediaType(this.settings.mediaUrl) : this.settings.mediaType;
+      diagInfo += `Detected Type: ${mediaType}\n`;
+      if (mediaType === "youtube") {
+         diagInfo += `YouTube ID: ${this.parseYouTubeVideoId(this.settings.mediaUrl) || 'None'}\n`;
+      }
+      diagInfo += `WebP Support: ${this._isWebPSupportedCache !== null ? this._isWebPSupportedCache : 'Pending'}`;
+      createInfoBox(secDiag, diagInfo);
+      
+      createSwitchRow(secDiag, this.t("debug"), "", this.settings.debug, (v) => this.saveSettings({ debug: v }));
     };
 
     updateRender();
