@@ -35,7 +35,7 @@ const STRINGS = {
     center: "Center",
     top: "Top",
     bottom: "Bottom",
-    localRestartWarning: "This environment does not support automatic local file reload. Please reselect the file after restart.",
+    localRestartWarning: "Local file playback works, but this environment does not expose a file path for automatic reload after restart.",
     webpFailed: "WebP failed to load.",
     invalidUrl: "Invalid URL",
     fileTooLarge: "File is too large",
@@ -43,6 +43,7 @@ const STRINGS = {
     liveChanges: "Live: changes apply immediately",
     title: "BgVideo",
     subtitle: "Background media loop",
+    openPersistentPicker: "Select Persistent File"
   },
   ja: {
     sourceMode: "ソース種別",
@@ -71,7 +72,7 @@ const STRINGS = {
     center: "中央",
     top: "上部",
     bottom: "下部",
-    localRestartWarning: "この環境ではローカルファイルの自動再読み込みに対応していません。再起動後は再選択が必要です。",
+    localRestartWarning: "ローカルファイルの再生は可能ですが、この環境では再起動後の自動再読み込みに必要なファイルパスを取得できません。",
     webpFailed: "WebPの読み込みに失敗しました。",
     invalidUrl: "無効なURLです。",
     fileTooLarge: "ファイルサイズが上限を超えています",
@@ -79,6 +80,7 @@ const STRINGS = {
     liveChanges: "Live: 変更は直ちに適用されます",
     title: "BgVideo",
     subtitle: "背景メディアをループ",
+    openPersistentPicker: "再起動可能なファイルを選択"
   }
 };
 
@@ -184,6 +186,62 @@ module.exports = class BgVideo {
     BdApi.UI.showToast(`${this.PLUGIN_NAME}: ${msg}`, { type });
   }
 
+  logFileDiagnostics(file) {
+    this.log("Diagnostics: File selected.");
+    if (file) {
+      this.log(`- Name: ${file.name}, Size: ${file.size}, Type: ${file.type}`);
+      this.log(`- file.path exists: ${!!file.path}`);
+      if (file.path) {
+        this.log(`- file.path typeof: ${typeof file.path}, val starts with: ${file.path.substring(0, 10)}...`);
+      }
+    } else {
+      this.log(`- File object is null/undefined.`);
+    }
+    this.log(`- BdApi.openDialog exists: ${!!(window.BdApi && BdApi.openDialog)}`);
+    this.log(`- DiscordNative safe dialog exists: ${!!(window.DiscordNative && window.DiscordNative.fileManager && window.DiscordNative.fileManager.showOpenDialog)}`);
+    this.log(`- Stored settings.localFilePath exists: ${!!this.settings.localFilePath}`);
+  }
+
+  // --- PATH TO FILE URL ---
+  pathToFileUrl(pathStr) {
+    if (!pathStr || typeof pathStr !== "string") return null;
+    let p = pathStr.replace(/\\/g, '/');
+    if (!p.startsWith('/')) {
+       p = '/' + p; // handle Windows "C:/" becoming "/C:/" for file URL standards
+    }
+    try {
+      // Safely encode parts so things like Japanese characters or spaces don't break the URL
+      const encoded = p.split('/').map(part => encodeURIComponent(part)).join('/');
+      // Revert the colon encoding for Windows drive letters (e.g. /C%3A/ -> /C:/)
+      const finalUrl = `file://${encoded.replace(/%3A/g, ':')}`;
+      this.log(`Diagnostics: Generated file URL: ${finalUrl}`);
+      return finalUrl;
+    } catch (e) {
+      this.log(`Diagnostics: pathToFileUrl failed`, e);
+      return null;
+    }
+  }
+
+  async openPersistentPicker() {
+    this.log("Attempting persistent picker API...");
+    const filters = [{ name: "Media Files", extensions: ["mp4", "webm", "png", "jpg", "jpeg", "gif", "webp", "avif"] }];
+    try {
+      if (window.BdApi && typeof BdApi.openDialog === "function") {
+        this.log("Using BdApi.openDialog");
+        const res = await BdApi.openDialog({ filters, properties: ["openFile"] });
+        if (Array.isArray(res) && res.length > 0) return res[0];
+        if (typeof res === "string") return res;
+      } else if (window.DiscordNative && window.DiscordNative.fileManager && typeof window.DiscordNative.fileManager.showOpenDialog === "function") {
+        this.log("Using DiscordNative.fileManager.showOpenDialog");
+        const res = await window.DiscordNative.fileManager.showOpenDialog({ filters, properties: ["openFile"] });
+        if (Array.isArray(res) && res.length > 0) return res[0];
+      }
+    } catch (e) {
+      this.log("Persistent picker failed:", e);
+    }
+    return null;
+  }
+
   // --- DETECTION ---
   isYouTubeUrl(input) {
     return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(input);
@@ -201,7 +259,6 @@ module.exports = class BgVideo {
 
   guessMediaType(url) {
     if (this.isYouTubeUrl(url)) return "youtube";
-    // For blob URLs, we assume we know the type from the extension metadata if passed, else fallback
     const extMatch = String(url || "").match(/\.([a-z0-9]+)(?:[\?#]|$)/i);
     const ext = extMatch ? extMatch[1].toLowerCase() : "";
     if (["mp4", "webm", "ogv"].includes(ext)) return "video";
@@ -230,7 +287,7 @@ module.exports = class BgVideo {
       this._mediaNode.remove();
       this._mediaNode = null;
     }
-    // We intentionally DO NOT revoke this._localFileBlobUrl here. It lives for the session.
+    // Object URL is intentionally kept alive for the session.
   }
 
   createMediaContainer() {
@@ -256,11 +313,20 @@ module.exports = class BgVideo {
     } else if (this.settings.sourceMode === "localFile") {
       isLocalFile = true;
       if (this._localFileBlobUrl) {
+        // Immediate playback via object URL
         sourceUrl = this._localFileBlobUrl;
+        this.log(`Diagnostics: Using immediate blob URL ${sourceUrl}`);
       } else if (this.settings.localFilePath) {
-        // Fallback to file:// if blob is missing but path exists (e.g. restart)
-        sourceUrl = `file://${this.settings.localFilePath.replace(/\\/g, '/')}`;
+        // Restart persistent loading
+        sourceUrl = this.pathToFileUrl(this.settings.localFilePath);
+        this.log(`Diagnostics: Restore attempt using local file path URL: ${sourceUrl}`);
+        if (!sourceUrl) {
+          this.log(`Diagnostics: Restore failed - path format invalid.`);
+          this.toast(this.t("localRestartWarning"), "error");
+          return;
+        }
       } else {
+        this.log(`Diagnostics: Restore failed - no path or blob url found.`);
         this.toast(this.t("localRestartWarning"), "error");
         return;
       }
@@ -272,10 +338,9 @@ module.exports = class BgVideo {
 
     let mediaType = this.guessMediaType(isLocalFile ? this.settings.localFileMeta : sourceUrl);
     
-    // Explicit override if source mode is youtube
     if (this.settings.sourceMode === "youtube") mediaType = "youtube";
 
-    this.log(`Detected Media Type: ${mediaType}`);
+    this.log(`Diagnostics: Detected Media Type: ${mediaType}`);
 
     if (mediaType === "youtube") {
       const videoId = this.parseYouTubeVideoId(sourceUrl);
@@ -283,20 +348,25 @@ module.exports = class BgVideo {
         this.toast(this.t("invalidUrl"), "error");
         return;
       }
+      this.log("Diagnostics: Renderer chosen: YouTube");
       this._mediaNode = this.createYouTubeRenderer(videoId, sourceUrl);
     } else if (mediaType === "video") {
+      this.log("Diagnostics: Renderer chosen: Video");
       this._mediaNode = this.createVideoRenderer(sourceUrl);
     } else if (mediaType === "image") {
-      if (sourceUrl.toLowerCase().endsWith(".webp")) {
+      if (sourceUrl.toLowerCase().endsWith(".webp") || (this.settings.localFileMeta && this.settings.localFileMeta.toLowerCase().includes(".webp"))) {
         const supported = await this.checkWebPSupport();
         if (!supported) {
           this.toast(this.t("webpFailed"), "error");
+          this.log("Diagnostics: WebP load failed.");
           return;
         }
       }
+      this.log("Diagnostics: Renderer chosen: Image");
       this._mediaNode = this.createImageRenderer(sourceUrl);
     } else {
       this.toast(this.t("unsupportedMedia"), "error");
+      this.log("Diagnostics: Unsupported media.");
       return;
     }
 
@@ -304,7 +374,7 @@ module.exports = class BgVideo {
     this.applyVisualSettings();
     this._reassertNoControls();
     
-    this.log("Renderer appended successfully.");
+    this.log("Diagnostics: Renderer appended successfully.");
   }
 
   createVideoRenderer(src) {
@@ -327,7 +397,7 @@ module.exports = class BgVideo {
 
     v.addEventListener("error", (e) => {
       this.toast(`Video load error (code ${v.error?.code}).`, "error");
-      this.log("Video load error:", e, v.error);
+      this.log("Diagnostics: Video load error:", e, v.error);
     });
 
     return v;
@@ -343,7 +413,7 @@ module.exports = class BgVideo {
     
     img.addEventListener("error", (e) => {
       this.toast(`Image load error.`, "error");
-      this.log("Image load error:", e);
+      this.log("Diagnostics: Image load error:", e);
     });
     return img;
   }
@@ -376,7 +446,6 @@ module.exports = class BgVideo {
   }
 
   // --- STYLING & FOCUS ---
-
   buildCss() {
     const s = this.settings;
     return `
@@ -422,7 +491,6 @@ module.exports = class BgVideo {
   applyVisualSettings() {
     BdApi.DOM.removeStyle(this.PLUGIN_NAME);
     BdApi.DOM.addStyle(this.PLUGIN_NAME, this.buildCss());
-    
     if (this._mediaNode) {
       this._mediaNode.style.objectFit = this.settings.objectFit;
       this._mediaNode.style.objectPosition = this.settings.objectPosition;
@@ -436,7 +504,6 @@ module.exports = class BgVideo {
   _reassertNoControls() {
     const node = this._mediaNode;
     if (!node) return;
-    
     if (node.tagName === "VIDEO") {
       node.controls = false;
       node.removeAttribute("controls");
@@ -444,13 +511,11 @@ module.exports = class BgVideo {
     if (node.tagName === "IFRAME") {
       node.style.pointerEvents = "none";
     }
-    
     const wrapper = document.getElementById("bgVideo-wrapper");
     if (wrapper) wrapper.style.pointerEvents = "none";
   }
 
   // --- LIFECYCLE ---
-
   start() {
     this.updateMediaSource();
     document.addEventListener("visibilitychange", this._onVisibilityOrFocus);
@@ -466,13 +531,13 @@ module.exports = class BgVideo {
     BdApi.DOM.removeStyle(this.PLUGIN_NAME);
     BdApi.DOM.removeStyle(this.PANEL_STYLE_ID);
     if (this._localFileBlobUrl) {
+      this.log("Diagnostics: Revoking blob URL on plugin stop.");
       URL.revokeObjectURL(this._localFileBlobUrl);
       this._localFileBlobUrl = null;
     }
   }
 
   // --- SETTINGS UI ---
-
   getSettingsPanel() {
     if (!this._panelCssMounted) {
       BdApi.DOM.addStyle(
@@ -579,15 +644,12 @@ module.exports = class BgVideo {
 
     const wrap = document.createElement("div");
     wrap.className = "bgv-wrap";
-
     const card = document.createElement("div");
     card.className = "bgv-card";
     wrap.appendChild(card);
-
     const head = document.createElement("div");
     head.className = "bgv-head";
     card.appendChild(head);
-
     const headLeft = document.createElement("div");
     head.appendChild(headLeft);
 
@@ -595,7 +657,6 @@ module.exports = class BgVideo {
     title.className = "bgv-title";
     title.textContent = this.t("title");
     headLeft.appendChild(title);
-
     const sub = document.createElement("div");
     sub.className = "bgv-sub";
     sub.textContent = this.t("subtitle");
@@ -609,23 +670,19 @@ module.exports = class BgVideo {
       const box = document.createElement("label");
       box.className = "bgv-toggle";
       const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !!initial;
+      cb.type = "checkbox"; cb.checked = !!initial;
       cb.addEventListener("change", (e) => onChange(e.target.checked));
       const t = document.createElement("span");
       t.textContent = labelText;
-      box.appendChild(cb);
-      box.appendChild(t);
+      box.appendChild(cb); box.appendChild(t);
       return box;
     };
-
     right.appendChild(mkToggle(this.t("debug"), this.settings.debug, (v) => { this.saveSettings({ debug: v }); }));
 
     const grid = document.createElement("div");
     grid.className = "bgv-grid";
     card.appendChild(grid);
 
-    // --- UI BUILDERS ---
     const mkRow = (labelText) => {
       const row = document.createElement("div");
       row.className = "bgv-row";
@@ -647,7 +704,7 @@ module.exports = class BgVideo {
     });
     sourceSel.addEventListener("change", (e) => {
       this.saveSettings({ sourceMode: e.target.value });
-      updateRender(); // Simple re-render helper wrapper below
+      updateRender();
     });
     sourceRow.appendChild(sourceSel);
     grid.appendChild(sourceRow);
@@ -678,6 +735,7 @@ module.exports = class BgVideo {
         lbl.textContent = this.t("localFile");
         dynamicMediaRow.appendChild(lbl);
 
+        // Immediate session playback input
         const fileInp = document.createElement("input");
         fileInp.type = "file";
         fileInp.accept = "video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp,image/avif";
@@ -685,34 +743,51 @@ module.exports = class BgVideo {
         fileInp.style.padding = "6px";
         fileInp.addEventListener("change", (e) => {
           const file = e.target.files[0];
+          this.logFileDiagnostics(file);
           if (!file) return;
           if (file.size > this.settings.maxBlobMB * 1024 * 1024) {
             BdApi.UI.showToast(this.t("fileTooLarge"), { type: "error" });
             return;
           }
-          
-          this.log("File selected:", file.name, file.size, file.type);
-          
           if (this._localFileBlobUrl) {
-            this.log("Revoking old blob:", this._localFileBlobUrl);
+            this.log("Diagnostics: Revoking old blob URL before creating a new one.");
             URL.revokeObjectURL(this._localFileBlobUrl);
           }
           this._localFileBlobUrl = URL.createObjectURL(file);
-          this.log("Created new blob:", this._localFileBlobUrl);
           
-          const localPath = file.path || null;
-          this.log("Electron file.path exposed:", !!localPath);
+          let localPath = file.path || null;
+          this.saveSettings({ localFilePath: localPath, localFileMeta: file.name });
           
-          this.saveSettings({ 
-             localFilePath: localPath, 
-             localFileMeta: file.name
-          });
-          
-          // Auto trigger reload on explicit file select
           this.updateMediaSource();
           renderDynamicMediaRow();
         });
         dynamicMediaRow.appendChild(fileInp);
+        
+        // Persistent Picker API (BdApi / Electron Native)
+        const canUsePersistentAPI = !!((window.BdApi && BdApi.openDialog) || (window.DiscordNative && window.DiscordNative.fileManager && window.DiscordNative.fileManager.showOpenDialog));
+        if (canUsePersistentAPI) {
+          const btnPicker = document.createElement("button");
+          btnPicker.className = "bgv-btn";
+          btnPicker.style.marginTop = "8px";
+          btnPicker.textContent = this.t("openPersistentPicker");
+          btnPicker.onclick = async () => {
+            const path = await this.openPersistentPicker();
+            if (path) {
+              const fileName = path.split('\\').pop().split('/').pop();
+              this.logFileDiagnostics(null); // Just to log api state
+              this.log(`Diagnostics: Picked persistent path: ${path}`);
+              this.saveSettings({ localFilePath: path, localFileMeta: fileName });
+              // We don't have a blob here, so clear it so updateMediaSource builds the file:// url
+              if (this._localFileBlobUrl) {
+                 URL.revokeObjectURL(this._localFileBlobUrl);
+                 this._localFileBlobUrl = null;
+              }
+              this.updateMediaSource();
+              renderDynamicMediaRow();
+            }
+          };
+          dynamicMediaRow.appendChild(btnPicker);
+        }
 
         if (this.settings.localFileMeta) {
            const sub = document.createElement("div");
@@ -722,25 +797,31 @@ module.exports = class BgVideo {
            sub.textContent = `Selected: ${this.settings.localFileMeta}`;
            dynamicMediaRow.appendChild(sub);
         }
+        
+        const canPersist = canUsePersistentAPI || (this.settings.localFilePath !== null && this.settings.localFilePath !== undefined);
+        if (!canPersist) {
+           const warn = document.createElement("div");
+           warn.style.fontSize = "11px";
+           warn.style.color = "rgba(255, 100, 100, 0.9)";
+           warn.style.marginTop = "6px";
+           warn.textContent = this.t("localRestartWarning");
+           dynamicMediaRow.appendChild(warn);
+        }
       }
     };
     renderDynamicMediaRow();
 
-    const updateRender = () => {
-      renderDynamicMediaRow();
-    };
+    const updateRender = () => { renderDynamicMediaRow(); };
 
     // SLIDERS
     const mkSliderRow = (label, key, min, max, step) => {
       const row = mkRow(label);
       const line = document.createElement("div");
       line.className = "bgv-sliderline";
-      
       const range = document.createElement("input");
       range.className = "bgv-range";
       range.type = "range"; range.min = min; range.max = max; range.step = step;
       range.value = this.settings[key];
-      
       const num = document.createElement("input");
       num.className = "bgv-num";
       num.type = "number"; num.min = min; num.max = max; num.step = step;
@@ -798,7 +879,6 @@ module.exports = class BgVideo {
     playbackRow.style.flexDirection = "row";
     playbackRow.style.justifyContent = "flex-start";
     playbackRow.style.gap = "20px";
-    
     playbackRow.appendChild(mkToggle(this.t("autoplay"), this.settings.youtubeAutoplay, v => this.saveSettings({youtubeAutoplay: v})));
     playbackRow.appendChild(mkToggle(this.t("loop"), this.settings.youtubeLoop, v => this.saveSettings({youtubeLoop: v})));
     playbackRow.appendChild(mkToggle(this.t("muted"), this.settings.youtubeMuted, v => this.saveSettings({youtubeMuted: v})));
@@ -830,6 +910,7 @@ module.exports = class BgVideo {
     btns.appendChild(mkBtn(this.t("test"), "", () => this.updateMediaSource()));
     btns.appendChild(mkBtn(this.t("clearLocalFile"), "danger", () => {
        if (this._localFileBlobUrl) {
+           this.log("Diagnostics: Revoking blob URL on explicit clear.");
            URL.revokeObjectURL(this._localFileBlobUrl);
            this._localFileBlobUrl = null;
        }
