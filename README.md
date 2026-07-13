@@ -14,13 +14,9 @@ The plugin is a single, dependency-free BetterDiscord file. Updates are delivere
 - **Multi-Source Support**:
   - Direct Remote Video URLs (`MP4`, `WebM`).
   - YouTube Videos (plays in the background using Video ID or Share Link).
-  - Local Media Files (supports dragging/dropping or selecting files via file picker).
 - **Format Compatibility**:
   - Supports video formats (`MP4`, `WebM`).
   - Supports image formats (`PNG`, `JPG`, `GIF`, and `WebP` with conditional transparency).
-- **Local File Persistence**:
-  - Supports restart-persistent playback by entering a `file:///` URL or a raw absolute local path (e.g. `/Users/...` or `C:\Users\...`) directly in the **Media URL** field. Raw paths are automatically normalized to `file:///` URIs.
-  - Selecting a file via the local file picker is session-only (temporary).
 - **Visual Tuning Controls**:
   - Opacity, Blur, Saturation, and Brightness adjustments.
   - Seamlessly integrates with the Discord UI under standard Discord dark/light themes.
@@ -51,9 +47,8 @@ For manual installs, verify that the file is named exactly `BgVideo.plugin.js` a
 The settings UI is kept compact, adhering to the classic BetterDiscord control style:
 
 ### Source Settings
-- **Source Type**: Select between `Remote URL`, `Local File`, or `YouTube`.
+- **Source Type**: Select between `Remote URL` or `YouTube`.
 - **Video URL / YouTube ID**: Input the link or ID of the background media.
-- **Local File Picker**: Select or drag a local media file for temporary session-only playback.
 
 ### Appearance
 - **Opacity**: Adjust background transparency.
@@ -72,7 +67,6 @@ The settings UI is kept compact, adhering to the classic BetterDiscord control s
 ## Limitations & Troubleshooting
 
 - **YouTube Overlay**: Best-effort YouTube iframe embedding is used. To avoid YouTube interface elements, BgVideo plays continuously and removes pointer events. Region-restricted, private, or embedding-disabled videos cannot be played.
-- **Local File Autoload**: If `file:///` URLs or absolute paths fail to load on startup, verify if Discord's Content Security Policy (CSP) restricts native file protocol loading in your client. If restricted, you may need to host the media on a remote URL.
 
 ## Compatibility
 

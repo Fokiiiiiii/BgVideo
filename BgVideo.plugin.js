@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.0.1
+ * @version 1.0.2
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -12,7 +12,6 @@ const STRINGS = {
   en: {
     sourceMode: "Source Mode",
     remoteUrl: "Remote URL",
-    localFile: "Local File",
     youtube: "YouTube",
     mediaUrl: "Media URL / YouTube URL",
     objectFit: "Object Fit",
@@ -24,8 +23,6 @@ const STRINGS = {
     autoplay: "Autoplay",
     loop: "Loop",
     muted: "Muted",
-    maxBlobMB: "Max local file size (MB)",
-    clearLocalFile: "Clear Local File",
     apply: "Apply",
     test: "Test",
     reset: "Reset",
@@ -36,10 +33,8 @@ const STRINGS = {
     center: "Center",
     top: "Top",
     bottom: "Bottom",
-    localRestartWarning: "Temporary local file. For restart persistence, use a file:///... URL in the Media URL field.",
     webpFailed: "WebP failed to load.",
     invalidUrl: "Invalid URL",
-    fileTooLarge: "File is too large",
     unsupportedMedia: "Unsupported Media",
     liveChanges: "Live: changes apply immediately",
     title: "BgVideo",
@@ -48,7 +43,6 @@ const STRINGS = {
   ja: {
     sourceMode: "ソース種別",
     remoteUrl: "リモートURL",
-    localFile: "ローカルファイル",
     youtube: "YouTube",
     mediaUrl: "メディアURL / YouTube URL",
     objectFit: "表示方法",
@@ -60,8 +54,6 @@ const STRINGS = {
     autoplay: "自動再生",
     loop: "ループ",
     muted: "ミュート",
-    maxBlobMB: "ローカルファイル最大サイズ (MB)",
-    clearLocalFile: "ローカルファイルを解除",
     apply: "適用",
     test: "テスト",
     reset: "リセット",
@@ -72,10 +64,8 @@ const STRINGS = {
     center: "中央",
     top: "上部",
     bottom: "下部",
-    localRestartWarning: "一時的なローカルファイルです。再起動後も使う場合はURL欄に file:///... を指定してください。",
     webpFailed: "WebPの読み込みに失敗しました。",
     invalidUrl: "無効なURLです。",
-    fileTooLarge: "ファイルサイズが上限を超えています",
     unsupportedMedia: "未対応のメディア形式です",
     liveChanges: "Live: 変更は直ちに適用されます",
     title: "BgVideo",
@@ -89,16 +79,14 @@ module.exports = class BgVideo {
     this.PANEL_STYLE_ID = `${this.PLUGIN_NAME}-panel`;
 
     this.defaults = {
-      sourceMode: "url", // url, localFile, youtube
+      sourceMode: "url", // url, youtube
       mediaUrl: "https://raw.githubusercontent.com/Fokiiiiiii/disocrd-Thema/main/Grievous_Lady_2.5_.mp4",
-      localFileMeta: null,
       objectFit: "cover",
       objectPosition: "center",
       opacity: 0.3,
       blur: 1.2,
       saturate: 1.08,
       brightness: 0.88,
-      maxBlobMB: 80,
       youtubeAutoplay: true,
       youtubeMuted: true,
       youtubeLoop: true,
@@ -109,7 +97,6 @@ module.exports = class BgVideo {
 
     // State
     this._mediaNode = null;
-    this._localFileBlobUrl = null; // Session object URL
     this._cssText = "";
     this._panelCssMounted = false;
     this._isWebPSupportedCache = null;
@@ -150,9 +137,15 @@ module.exports = class BgVideo {
       delete saved.url;
       changed = true;
     }
-    // Clean up old dialog / persistence values that might be leftover
-    if (saved.localFilePath) {
-      delete saved.localFilePath;
+    // Remove obsolete settings from previous versions.
+    for (const key of ["localFilePath", "localFileMeta", "maxBlobMB"]) {
+      if (Object.prototype.hasOwnProperty.call(saved, key)) {
+        delete saved[key];
+        changed = true;
+      }
+    }
+    if (saved.sourceMode === "localFile") {
+      saved.sourceMode = "url";
       changed = true;
     }
     if (changed) {
@@ -190,10 +183,6 @@ module.exports = class BgVideo {
   }
 
   // --- HELPERS ---
-  isFileUrl(input) {
-    return typeof input === "string" && input.startsWith("file:///");
-  }
-
   isHttpUrl(input) {
     return typeof input === "string" && /^https?:\/\//i.test(input);
   }
@@ -202,32 +191,8 @@ module.exports = class BgVideo {
     return typeof input === "string" && /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(input);
   }
 
-  isAbsoluteLocalPath(input) {
-    if (typeof input !== "string") return false;
-    return input.startsWith("/") || /^[a-zA-Z]:\\/.test(input) || /^[a-zA-Z]:\//.test(input);
-  }
-
-  pathToFileUrl(pathStr) {
-    if (!pathStr || typeof pathStr !== "string") return "";
-    let p = pathStr.replace(/\\/g, '/');
-    if (/^[a-zA-Z]:/.test(p)) {
-      p = '/' + p;
-    }
-    try {
-      const encoded = p.split('/').map(part => encodeURIComponent(part)).join('/');
-      return `file://${encoded.replace(/%3A/g, ':')}`;
-    } catch (e) {
-      return "";
-    }
-  }
-
   normalizeMediaUrl(input) {
-    if (typeof input !== "string") return "";
-    const trimmed = input.trim();
-    if (this.isAbsoluteLocalPath(trimmed)) {
-      return this.pathToFileUrl(trimmed);
-    }
-    return trimmed;
+    return typeof input === "string" ? input.trim() : "";
   }
 
   validateMediaUrl(input) {
@@ -246,9 +211,7 @@ module.exports = class BgVideo {
     if (url.endsWith("/")) {
       return false;
     }
-    if (url.startsWith("file://")) {
-      if (!url.startsWith("file:///")) return false;
-    } else if (!this.isHttpUrl(url) && !this.isAbsoluteLocalPath(url)) {
+    if (!this.isHttpUrl(url)) {
       return false;
     }
     return true;
@@ -316,12 +279,6 @@ module.exports = class BgVideo {
 
     if (this.settings.sourceMode === "url" || this.settings.sourceMode === "youtube") {
       sourceUrl = this.settings.mediaUrl?.trim();
-    } else if (this.settings.sourceMode === "localFile") {
-      if (this._localFileBlobUrl) {
-        sourceUrl = this._localFileBlobUrl;
-      } else {
-        return;
-      }
     }
 
     if (!sourceUrl) return;
@@ -343,7 +300,7 @@ module.exports = class BgVideo {
     } else if (mediaType === "video") {
       this._mediaNode = this.createVideoRenderer(sourceUrl);
     } else if (mediaType === "image") {
-      if (sourceUrl.toLowerCase().endsWith(".webp") || (this.settings.localFileMeta && this.settings.localFileMeta.toLowerCase().includes(".webp"))) {
+      if (sourceUrl.toLowerCase().endsWith(".webp")) {
         const supported = await this.checkWebPSupport();
         if (!supported) {
           this.toast(this.t("webpFailed"), "error");
@@ -512,11 +469,6 @@ module.exports = class BgVideo {
     if (wrapper) wrapper.remove();
     BdApi.DOM.removeStyle(this.PLUGIN_NAME);
     BdApi.DOM.removeStyle(this.PANEL_STYLE_ID);
-    if (this._localFileBlobUrl) {
-      this.log("Diagnostics: Revoking blob URL on plugin stop.");
-      URL.revokeObjectURL(this._localFileBlobUrl);
-      this._localFileBlobUrl = null;
-    }
   }
 
   // --- SETTINGS UI ---
@@ -679,7 +631,7 @@ module.exports = class BgVideo {
     const sourceRow = mkRow(this.t("sourceMode"));
     const sourceSel = document.createElement("select");
     sourceSel.className = "bgv-select";
-    [{label: this.t("remoteUrl"), value: "url"}, {label: this.t("localFile"), value: "localFile"}, {label: this.t("youtube"), value: "youtube"}].forEach(o => {
+    [{label: this.t("remoteUrl"), value: "url"}, {label: this.t("youtube"), value: "youtube"}].forEach(o => {
       const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label;
       if (o.value === this.settings.sourceMode) opt.selected = true;
       sourceSel.appendChild(opt);
@@ -718,51 +670,6 @@ module.exports = class BgVideo {
           this.saveSettings({ mediaUrl: norm });
         });
         dynamicMediaRow.appendChild(inp);
-      } else {
-        const lbl = document.createElement("div");
-        lbl.className = "bgv-label";
-        lbl.textContent = this.t("localFile");
-        dynamicMediaRow.appendChild(lbl);
-
-        // Immediate session playback input
-        const fileInp = document.createElement("input");
-        fileInp.type = "file";
-        fileInp.accept = "video/mp4,video/webm,image/png,image/jpeg,image/gif,image/webp,image/avif";
-        fileInp.className = "bgv-input";
-        fileInp.style.padding = "6px";
-        fileInp.addEventListener("change", (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          if (file.size > this.settings.maxBlobMB * 1024 * 1024) {
-            BdApi.UI.showToast(this.t("fileTooLarge"), { type: "error" });
-            return;
-          }
-          if (this._localFileBlobUrl) {
-            URL.revokeObjectURL(this._localFileBlobUrl);
-          }
-          this._localFileBlobUrl = URL.createObjectURL(file);
-          this.saveSettings({ localFileMeta: file.name });
-          
-          this.updateMediaSource();
-          renderDynamicMediaRow();
-        });
-        dynamicMediaRow.appendChild(fileInp);
-
-        if (this.settings.localFileMeta) {
-           const sub = document.createElement("div");
-           sub.style.fontSize = "11px";
-           sub.style.opacity = "0.7";
-           sub.style.marginTop = "4px";
-           sub.textContent = `Selected: ${this.settings.localFileMeta}`;
-           dynamicMediaRow.appendChild(sub);
-        }
-        
-        const warn = document.createElement("div");
-        warn.style.fontSize = "11px";
-        warn.style.color = "rgba(255, 100, 100, 0.9)";
-        warn.style.marginTop = "6px";
-        warn.textContent = this.t("localRestartWarning");
-        dynamicMediaRow.appendChild(warn);
       }
     };
     renderDynamicMediaRow();
@@ -789,7 +696,7 @@ module.exports = class BgVideo {
         v = Math.max(min, Math.min(max, v));
         range.value = v; num.value = v;
         this.saveSettings({ [key]: v });
-        if (key !== "maxBlobMB") this.applyVisualSettings();
+        this.applyVisualSettings();
       };
       
       range.addEventListener("input", e => sync(e.target.value));
@@ -840,9 +747,6 @@ module.exports = class BgVideo {
     playbackRow.appendChild(mkToggle(this.t("muted"), this.settings.youtubeMuted, v => this.saveSettings({youtubeMuted: v})));
     grid.appendChild(playbackRow);
 
-    // MAX FILE SIZE
-    grid.appendChild(mkSliderRow(this.t("maxBlobMB"), "maxBlobMB", 5, 500, 5));
-
     // FOOTNOTE
     const foot = document.createElement("div");
     foot.className = "bgv-footnote";
@@ -864,15 +768,6 @@ module.exports = class BgVideo {
 
     btns.appendChild(mkBtn(this.t("apply"), "primary", () => this.updateMediaSource()));
     btns.appendChild(mkBtn(this.t("test"), "", () => this.updateMediaSource()));
-    btns.appendChild(mkBtn(this.t("clearLocalFile"), "danger", () => {
-       if (this._localFileBlobUrl) {
-           URL.revokeObjectURL(this._localFileBlobUrl);
-           this._localFileBlobUrl = null;
-       }
-       this.saveSettings({ localFileMeta: null });
-       this.toast("Cleared", "success");
-       updateRender();
-    }));
     btns.appendChild(mkBtn(this.t("reset"), "danger", () => {
       this.settings = { ...this.defaults };
       BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
