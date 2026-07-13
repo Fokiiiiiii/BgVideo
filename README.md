@@ -1,8 +1,13 @@
 # BgVideo
 
+[![Latest release](https://img.shields.io/github/v/release/Fokiiiiiii/BgVideo?sort=semver)](https://github.com/Fokiiiiiii/BgVideo/releases)
+[![License](https://img.shields.io/github/license/Fokiiiiiii/BgVideo)](LICENSE)
+
 A BetterDiscord plugin that plays a looping video or image background behind the Discord UI.
 
 BgVideo lets you replace Discord's static background with an animated video, a YouTube stream, or a static image, while keeping the interface sleek, responsive, and readable.
+
+The plugin is a single, dependency-free BetterDiscord file. Updates are delivered through BetterDiscord's built-in update checker.
 
 ## Features
 
@@ -35,6 +40,12 @@ BgVideo lets you replace Discord's static background with an animated video, a Y
 3. Enable **BgVideo**.
 4. Open the plugin's settings to configure your background source.
 
+### Updating
+
+When BetterDiscord reports an update, accept it from the Plugins page. You can also download the latest `BgVideo.plugin.js` from the [releases page](https://github.com/Fokiiiiiii/BgVideo/releases) and replace the existing file. The plugin's settings are stored by BetterDiscord and are preserved across updates.
+
+For manual installs, verify that the file is named exactly `BgVideo.plugin.js` and that there is only one copy in the plugins directory.
+
 ## Settings Configuration
 
 The settings UI is kept compact, adhering to the classic BetterDiscord control style:
@@ -63,3 +74,10 @@ The settings UI is kept compact, adhering to the classic BetterDiscord control s
 - **YouTube Overlay**: Best-effort YouTube iframe embedding is used. To avoid YouTube interface elements, BgVideo plays continuously and removes pointer events. Region-restricted, private, or embedding-disabled videos cannot be played.
 - **Local File Autoload**: If `file:///` URLs or absolute paths fail to load on startup, verify if Discord's Content Security Policy (CSP) restricts native file protocol loading in your client. If restricted, you may need to host the media on a remote URL.
 
+## Compatibility
+
+- BetterDiscord on the current stable Discord desktop client.
+- Chromium media support determines which video and image codecs are available.
+- YouTube playback depends on the video's embed permissions and regional availability.
+
+If a Discord update changes internal UI behavior, disable and re-enable the plugin first, then report the Discord client version and the source type that failed in an issue.
