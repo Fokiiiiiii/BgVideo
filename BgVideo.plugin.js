@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.0.2
+ * @version 1.0.3
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -257,7 +257,6 @@ module.exports = class BgVideo {
       this._mediaNode.remove();
       this._mediaNode = null;
     }
-    // Object URL is intentionally kept alive for the session.
   }
 
   createMediaContainer() {
@@ -330,8 +329,7 @@ module.exports = class BgVideo {
     v.removeAttribute("controls");
     v.disablePictureInPicture = true;
     v.setAttribute("controlsList", "nodownload nofullscreen noremoteplayback");
-    
-    v.crossOrigin = "anonymous";
+
     v.tabIndex = -1;
     v.setAttribute("aria-hidden", "true");
     v.src = src;
@@ -347,7 +345,6 @@ module.exports = class BgVideo {
     const img = document.createElement("img");
     img.id = "bgVideo-media";
     img.src = src;
-    img.crossOrigin = "anonymous";
     img.tabIndex = -1;
     img.setAttribute("aria-hidden", "true");
     
@@ -397,8 +394,8 @@ module.exports = class BgVideo {
         user-select: none !important;
         -webkit-user-drag: none !important;
         z-index: 0;
-        opacity: ${s.opacity};
-        filter: blur(${s.blur}px) saturate(${s.saturate}) brightness(${s.brightness});
+        opacity: var(--bgv-opacity, ${s.opacity});
+        filter: blur(var(--bgv-blur, ${s.blur}px)) saturate(var(--bgv-saturate, ${s.saturate})) brightness(var(--bgv-brightness, ${s.brightness}));
         transform: translate3d(0,0,0);
         will-change: transform, opacity, filter;
         overflow: hidden;
@@ -434,6 +431,26 @@ module.exports = class BgVideo {
       this._mediaNode.style.objectFit = this.settings.objectFit;
       this._mediaNode.style.objectPosition = this.settings.objectPosition;
     }
+    this.applyLiveVars();
+  }
+
+  // Cheap per-frame update for slider drags: sets CSS custom properties
+  // directly instead of re-injecting the whole stylesheet.
+  applyLiveVars() {
+    const wrapper = document.getElementById("bgVideo-wrapper");
+    if (!wrapper) return;
+    const s = this.settings;
+    wrapper.style.setProperty("--bgv-opacity", s.opacity);
+    wrapper.style.setProperty("--bgv-blur", `${s.blur}px`);
+    wrapper.style.setProperty("--bgv-saturate", s.saturate);
+    wrapper.style.setProperty("--bgv-brightness", s.brightness);
+  }
+
+  _debouncedPersist() {
+    clearTimeout(this._persistTimer);
+    this._persistTimer = setTimeout(() => {
+      BdApi.Data.save(this.PLUGIN_NAME, "settings", this.settings);
+    }, 200);
   }
 
   _onVisibilityOrFocus() {
@@ -514,6 +531,10 @@ module.exports = class BgVideo {
       background:rgba(0,0,0,0.25);
       color:var(--text-normal);
       outline:none
+      }
+      .bgv-input.bgv-invalid{
+      border-color:rgba(245,66,66,0.8);
+      box-shadow:0 0 0 2px rgba(245,66,66,0.2)
       }
       .bgv-toggle{display:flex;gap:10px;align-items:center;}
       .bgv-toggle span{font-size:12px; opacity:0.9;}
@@ -661,10 +682,17 @@ module.exports = class BgVideo {
         inp.className = "bgv-input";
         inp.type = "text";
         inp.value = this.settings.mediaUrl || "";
+        inp.classList.toggle("bgv-invalid", !!inp.value && !this.validateMediaUrl(inp.value));
+        inp.addEventListener("input", (e) => {
+          const val = e.target.value;
+          inp.classList.toggle("bgv-invalid", !!val.trim() && !this.validateMediaUrl(val));
+        });
         inp.addEventListener("change", (e) => {
           const norm = this.normalizeMediaUrl(e.target.value);
           inp.value = norm;
-          if (norm && !this.validateMediaUrl(norm)) {
+          const invalid = !!norm && !this.validateMediaUrl(norm);
+          inp.classList.toggle("bgv-invalid", invalid);
+          if (invalid) {
             this.toast(this.t("unsupportedMedia"), "error");
           }
           this.saveSettings({ mediaUrl: norm });
@@ -690,17 +718,30 @@ module.exports = class BgVideo {
       num.type = "number"; num.min = min; num.max = max; num.step = step;
       num.value = this.settings[key];
 
-      const sync = (vStr) => {
+      // Live drag: update in-memory value + CSS var immediately, but debounce
+      // the disk write so dragging the range input stays smooth.
+      const syncLive = (vStr) => {
+        let v = parseFloat(vStr);
+        if(isNaN(v)) return;
+        v = Math.max(min, Math.min(max, v));
+        range.value = v; num.value = v;
+        this.settings = { ...this.settings, [key]: v };
+        this.applyLiveVars();
+        this._debouncedPersist();
+      };
+
+      // Direct number entry: infrequent, safe to save immediately.
+      const syncCommitted = (vStr) => {
         let v = parseFloat(vStr);
         if(isNaN(v)) return;
         v = Math.max(min, Math.min(max, v));
         range.value = v; num.value = v;
         this.saveSettings({ [key]: v });
-        this.applyVisualSettings();
+        this.applyLiveVars();
       };
-      
-      range.addEventListener("input", e => sync(e.target.value));
-      num.addEventListener("change", e => sync(e.target.value));
+
+      range.addEventListener("input", e => syncLive(e.target.value));
+      num.addEventListener("change", e => syncCommitted(e.target.value));
       
       line.appendChild(range); line.appendChild(num);
       row.appendChild(line);
