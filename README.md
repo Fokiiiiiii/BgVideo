@@ -1,77 +1,61 @@
 # BgVideo
 
-[![Latest release](https://img.shields.io/github/v/release/Fokiiiiiii/BgVideo?sort=semver)](https://github.com/Fokiiiiiii/BgVideo/releases)
-[![License](https://img.shields.io/github/license/Fokiiiiiii/BgVideo)](LICENSE)
-
-A BetterDiscord plugin that plays a looping video or image background behind the Discord UI.
-
-BgVideo lets you replace Discord's static background with an animated video, a YouTube stream, or a static image, while keeping the interface sleek, responsive, and readable.
-
-The plugin is a single, dependency-free BetterDiscord file. Updates are delivered through BetterDiscord's built-in update checker.
+BetterDiscord plugin for displaying remote video, images, or YouTube behind the Discord interface.
 
 ## Features
 
-- **Multi-Source Support**:
-  - Direct Remote Video URLs (`MP4`, `WebM`).
-  - YouTube Videos (plays in the background using Video ID or Share Link).
-- **Format Compatibility**:
-  - Supports video formats (`MP4`, `WebM`).
-  - Supports image formats (`PNG`, `JPG`, `GIF`, and `WebP` with conditional transparency).
-- **Visual Tuning Controls**:
-  - Opacity, Blur, Saturation, and Brightness adjustments.
-  - Seamlessly integrates with the Discord UI under standard Discord dark/light themes.
-- **Silent Auto-Localization**:
-  - Automatically switches between English and Japanese based on your Discord language settings.
-- **Smart Playback Lifecycle**:
-  - Respects OS and browser `prefers-reduced-motion` settings.
-  - Keeps playing continuously in the background to prevent YouTube player overlays/ads from pausing or showing controls when returning to Discord from another window.
+- MP4, WebM, OGV, OGG, PNG, JPG, GIF, WebP, AVIF, and BMP media
+- YouTube watch, share, Shorts, Live, and playlist URLs
+- Opacity, blur, saturation, brightness, object fit, and position controls
+- Autoplay, loop, and muted playback
+- Reduced-motion support: pause, hide, or ignore
+- Pause while Discord is hidden
+- Bounded recovery for stalled or failed direct video playback
+- Lightweight single-file plugin with full cleanup on stop
 
-## Installation
+## Install
 
-1. Download `BgVideo.plugin.js` and place it in your BetterDiscord plugins directory:
-   - **Windows**: `%appdata%\BetterDiscord\plugins`
-   - **macOS**: `~/Library/Application Support/BetterDiscord/plugins`
-   - **Linux**: `~/.config/BetterDiscord/plugins`
-2. Open Discord and navigate to **User Settings** -> **BetterDiscord** -> **Plugins**.
-3. Enable **BgVideo**.
-4. Open the plugin's settings to configure your background source.
+1. Download [`BgVideo.plugin.js`](https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js).
+2. Copy it to the BetterDiscord plugins folder.
+3. Open **User Settings → BetterDiscord → Plugins**.
+4. Enable **BgVideo** and open its settings.
 
-### Updating
+On the first settings screen, complete the setup in this order:
 
-When BetterDiscord reports an update, accept it from the Plugins page. You can also download the latest `BgVideo.plugin.js` from the [releases page](https://github.com/Fokiiiiiii/BgVideo/releases) and replace the existing file. The plugin's settings are stored by BetterDiscord and are preserved across updates.
+1. Enter a direct media URL or a YouTube URL.
+2. Click **Test** to preview it without saving.
+3. Click **Apply** to save and start the background.
+4. Use a BetterDiscord theme that lets you edit the app background and transparency. See the theme requirement below if the video is hidden.
 
-For manual installs, verify that the file is named exactly `BgVideo.plugin.js` and that there is only one copy in the plugins directory.
+Keep the filename as `BgVideo.plugin.js`.
 
-## Settings Configuration
+## Settings
 
-The settings UI is kept compact, adhering to the classic BetterDiscord control style:
+- **Source**: remote media URL or YouTube URL
+- **Appearance**: opacity, blur, saturation, brightness, fit, and position
+- **Playback**: autoplay, loop, and muted
+- **Behavior**: reduced motion, hidden-window pause, and recovery limits
+- **Diagnostics**: current media state and optional debug logging
 
-### Source Settings
-- **Source Type**: Select between `Remote URL` or `YouTube`.
-- **Video URL / YouTube ID**: Input the link or ID of the background media.
+**Test** previews a source without saving it. **Apply** validates, saves, and loads it.
 
-### Appearance
-- **Opacity**: Adjust background transparency.
-- **Blur (px)**: Add a custom blur radius.
-- **Saturate**: Increase or decrease color saturation.
-- **Brightness**: Modify the background brightness.
+## Theme requirement
 
-### Playback & Behavior
-- **Respect Reduced Motion**: Pauses the media if the OS or Discord prefers reduced motion.
-- **Auto Recover Playback**: Restarts the media element if playback stalls.
-- **Stall Threshold (sec)**: Time to wait before executing a playback recovery.
+BgVideo does not include or select a specific theme. To display the video behind Discord, use a BetterDiscord theme that provides controls for:
 
-### Diagnostics
-- **Debug Mode**: Toggle to show status logs in the browser console.
+- App background image or background source
+- Background opacity or shading
+- Transparent app layers
+- Theme Custom CSS or equivalent background variables
 
-## Limitations & Troubleshooting
+If the active theme keeps the app background opaque and provides no way to change it, the media can load and play while remaining invisible behind the Discord interface.
 
-- **YouTube Overlay**: Best-effort YouTube iframe embedding is used. To avoid YouTube interface elements, BgVideo plays continuously and removes pointer events. Region-restricted, private, or embedding-disabled videos cannot be played.
+## Updates
 
-## Compatibility
+The plugin includes BetterDiscord updater metadata. Automatic detection depends on the BetterDiscord Store being available and the plugin being accepted there. Until then, replace the file manually with the latest version from the fixed Raw URL above.
 
-- BetterDiscord on the current stable Discord desktop client.
-- Chromium media support determines which video and image codecs are available.
-- YouTube playback depends on the video's embed permissions and regional availability.
+## Limitations
 
-If a Discord update changes internal UI behavior, disable and re-enable the plugin first, then report the Discord client version and the source type that failed in an issue.
+- URLs must use HTTP(S) and a supported media type.
+- YouTube playback requires embedding to be allowed.
+- Supported codecs depend on Discord's Chromium runtime and the media server's headers.
