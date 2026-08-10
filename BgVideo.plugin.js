@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.1
+ * @version 1.1.1
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -179,6 +179,7 @@ module.exports = class BgVideo {
     this._pausedForVisibility = false;
     this._motionHidden = false;
     this._visibilityHidden = false;
+    this._visibilityNode = null;
     this._pausedForReducedMotion = false;
     this._status = { type: "idle", detail: "" };
     this._statusElement = null;
@@ -481,12 +482,17 @@ module.exports = class BgVideo {
         this._motionHidden = true;
       }
       if (node.tagName === "VIDEO") {
-        this._pausedForReducedMotion = !node.paused;
+        this._pausedForReducedMotion = !node.paused || node.autoplay;
         try { node.pause(); } catch {}
       }
-    } else if (!reduced && this._pausedForReducedMotion && node.tagName === "VIDEO" && this.settings.youtubeAutoplay) {
-      this._pausedForReducedMotion = false;
-      this.playVideo(node);
+    } else if (
+      !reduced &&
+      !this._visibilityHidden &&
+      (this._pausedForReducedMotion || this._pausedForVisibility) &&
+      node.tagName === "VIDEO" &&
+      this.settings.youtubeAutoplay
+    ) {
+      this.resumeVideo(node);
     }
     this.syncNodeVisibility();
   }
@@ -494,27 +500,63 @@ module.exports = class BgVideo {
   applyVisibilityState() {
     const hidden = !!document.hidden && this.settings.pauseWhenHidden;
     const node = this._mediaNode;
+    const wasHidden = this._visibilityHidden;
+    const nodeChanged = node !== this._visibilityNode;
     this._visibilityHidden = hidden;
+    this._visibilityNode = node;
     if (node?.tagName === "VIDEO") {
       if (hidden) {
-        this._pausedForVisibility = !node.paused;
+        if (nodeChanged || !wasHidden) {
+          this._pausedForVisibility = !node.paused || node.autoplay;
+        }
+        this.clearRecoveryTimer();
         try { node.pause(); } catch {}
-      } else if (this._pausedForVisibility && !this.shouldReduceMotion() && this.settings.youtubeAutoplay) {
-        this._pausedForVisibility = false;
-        this.playVideo(node);
+      } else if (
+        (this._pausedForVisibility || this._pausedForReducedMotion) &&
+        !this.shouldReduceMotion() &&
+        this.settings.youtubeAutoplay
+      ) {
+        this.resumeVideo(node);
       }
     }
     this.syncNodeVisibility();
   }
 
   playVideo(node) {
-    if (!node || node.tagName !== "VIDEO") return;
+    if (!node || node.tagName !== "VIDEO") return Promise.resolve(false);
     try {
       const result = node.play();
-      if (result?.catch) result.catch((error) => this.log("Video play was blocked", error));
+      if (typeof result?.then === "function") {
+        return result.then(
+          () => true,
+          (error) => {
+            this.log("Video play was blocked", error);
+            return false;
+          },
+        );
+      }
+      return Promise.resolve(true);
     } catch (error) {
       this.log("Video play failed", error);
+      return Promise.resolve(false);
     }
+  }
+
+  resumeVideo(node) {
+    return this.playVideo(node).then((played) => {
+      if (!played) {
+        if (node === this._mediaNode && !this._visibilityHidden && !this.shouldReduceMotion()) {
+          this.scheduleVideoRecovery(node, true);
+        }
+        return false;
+      }
+      if (node !== this._mediaNode) return false;
+      if (!this._visibilityHidden && !this.shouldReduceMotion()) {
+        this._pausedForVisibility = false;
+        this._pausedForReducedMotion = false;
+      }
+      return true;
+    });
   }
 
   // --- RENDERERS ---
@@ -527,6 +569,10 @@ module.exports = class BgVideo {
     this.clearRecoveryTimer();
     this._recoveryAttempts = 0;
     this._recoveryWindowStartedAt = 0;
+    this._pausedForVisibility = false;
+    this._pausedForReducedMotion = false;
+    this._motionHidden = false;
+    this._visibilityNode = null;
     const node = this._mediaNode;
     this._mediaNode = null;
     this._mediaSource = null;
@@ -792,7 +838,13 @@ module.exports = class BgVideo {
   }
 
   scheduleVideoRecovery(video, force = false) {
-    if (!this.settings.autoRecoverPlayback || video !== this._mediaNode || (!force && video.paused)) return;
+    if (
+      !this.settings.autoRecoverPlayback ||
+      this._visibilityHidden ||
+      this.shouldReduceMotion() ||
+      video !== this._mediaNode ||
+      (!force && video.paused)
+    ) return;
     if (this._recoveryTimer) {
       if (!force) return;
       clearTimeout(this._recoveryTimer);
@@ -804,7 +856,13 @@ module.exports = class BgVideo {
   }
 
   recoverVideo(video, force = false) {
-    if (!this.settings.autoRecoverPlayback || video !== this._mediaNode || (!force && video.paused)) return;
+    if (
+      !this.settings.autoRecoverPlayback ||
+      this._visibilityHidden ||
+      this.shouldReduceMotion() ||
+      video !== this._mediaNode ||
+      (!force && video.paused)
+    ) return;
     const now = Date.now();
     if (!this._recoveryWindowStartedAt || now - this._recoveryWindowStartedAt > 60000) {
       this._recoveryWindowStartedAt = now;
@@ -819,10 +877,11 @@ module.exports = class BgVideo {
     this._recoveryAttempts += 1;
     const position = Number.isFinite(video.currentTime) ? video.currentTime : 0;
     this.log("Recovering stalled video, attempt " + this._recoveryAttempts);
+    if (video.autoplay && !this.shouldReduceMotion()) this._pausedForVisibility = true;
     const restore = () => {
-      if (video !== this._mediaNode) return;
+      if (video !== this._mediaNode || this._visibilityHidden || this.shouldReduceMotion()) return;
       try { video.currentTime = position; } catch {}
-      this.playVideo(video);
+      this.resumeVideo(video);
     };
     video.addEventListener("loadedmetadata", restore, { once: true });
     try { video.load(); } catch {}
@@ -836,7 +895,7 @@ module.exports = class BgVideo {
       node.autoplay = !!settings.youtubeAutoplay;
       node.loop = !!settings.youtubeLoop;
       node.muted = !!settings.youtubeMuted;
-      if (node.autoplay && !this.shouldReduceMotion() && !this._visibilityHidden) this.playVideo(node);
+      if (node.autoplay && !this.shouldReduceMotion() && !this._visibilityHidden) this.resumeVideo(node);
     } else if (node.tagName === "IFRAME" && this._mediaSource?.type === "youtube") {
       // YouTube playback parameters live in the iframe URL, so reload only when a
       // playback toggle actually changes instead of rebuilding during slider drags.
