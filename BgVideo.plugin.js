@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.1.0
+ * @version 1.1
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -11,9 +11,6 @@
 const STRINGS = {
   en: {
     source: "Source",
-    sourceMode: "Source Mode",
-    remoteUrl: "Remote URL",
-    youtube: "YouTube",
     mediaUrl: "Media URL / YouTube URL",
     mediaUrlHint: "HTTP(S) media URL. YouTube share, watch, shorts, live, and playlist URLs are supported.",
     appearance: "Appearance",
@@ -59,15 +56,8 @@ const STRINGS = {
     video: "Video",
     image: "Image",
     youtubeMedia: "YouTube",
-    cover: "Cover",
-    contain: "Contain",
-    fill: "Fill",
-    center: "Center",
-    top: "Top",
-    bottom: "Bottom",
     webpFailed: "WebP failed to load in this Discord/Electron environment.",
     invalidUrl: "Invalid or unsupported URL.",
-    unsupportedMedia: "Unsupported media type. Use a supported video or image URL.",
     noSource: "No background source configured.",
     videoError: "Video failed to load.",
     imageError: "Image failed to load.",
@@ -84,9 +74,6 @@ const STRINGS = {
   },
   ja: {
     source: "ソース",
-    sourceMode: "ソース種別",
-    remoteUrl: "リモートURL",
-    youtube: "YouTube",
     mediaUrl: "メディアURL / YouTube URL",
     mediaUrlHint: "HTTP(S)のメディアURL。YouTubeの共有・再生・Shorts・Live・プレイリストに対応します。",
     appearance: "表示",
@@ -132,15 +119,8 @@ const STRINGS = {
     video: "動画",
     image: "画像",
     youtubeMedia: "YouTube",
-    cover: "カバー",
-    contain: "コンテイン",
-    fill: "フィル",
-    center: "中央",
-    top: "上部",
-    bottom: "下部",
     webpFailed: "このDiscord/Electron環境ではWebPを読み込めません。",
     invalidUrl: "URLが無効か、未対応の形式です。",
-    unsupportedMedia: "未対応のメディア形式です。動画または画像URLを指定してください。",
     noSource: "背景ソースが設定されていません。",
     videoError: "動画の読み込みに失敗しました。",
     imageError: "画像の読み込みに失敗しました。",
@@ -163,7 +143,6 @@ module.exports = class BgVideo {
     this.PANEL_STYLE_ID = this.PLUGIN_NAME + "-panel";
 
     this.defaults = {
-      sourceMode: "url",
       mediaUrl: "",
       objectFit: "cover",
       objectPosition: "center",
@@ -178,7 +157,6 @@ module.exports = class BgVideo {
       autoRecoverPlayback: true,
       stallThresholdSeconds: 5,
       pauseWhenHidden: true,
-      forceTransparency: true,
       onboardingDismissed: false,
       debug: false,
     };
@@ -218,7 +196,10 @@ module.exports = class BgVideo {
 
   // --- I18N ---
   getLang() {
-    return "ja";
+    const locale = (typeof document !== "undefined" && document.documentElement?.lang)
+      || (typeof navigator !== "undefined" && navigator.language)
+      || "ja";
+    return String(locale).toLowerCase().startsWith("ja") ? "ja" : "en";
   }
 
   t(key) {
@@ -237,17 +218,14 @@ module.exports = class BgVideo {
 
   migrateSettings(saved) {
     const next = saved && typeof saved === "object" ? { ...saved } : {};
-    let changed = false;
 
     if (next.url && !next.mediaUrl) {
       next.mediaUrl = next.url;
       delete next.url;
-      changed = true;
     }
     if (next.respectReducedMotion !== undefined && next.reducedMotionBehavior === undefined) {
       next.reducedMotionBehavior = next.respectReducedMotion ? "pauseVideo" : "ignore";
       delete next.respectReducedMotion;
-      changed = true;
     }
 
     // These settings belonged to the removed local-file mode. Keep migration safe without
@@ -255,15 +233,11 @@ module.exports = class BgVideo {
     for (const key of ["localFilePath", "localFileMeta", "maxBlobMB"]) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {
         delete next[key];
-        changed = true;
       }
     }
-    if (next.sourceMode === "localFile") {
-      next.sourceMode = "url";
-      changed = true;
-    }
+    delete next.sourceMode;
+    delete next.forceTransparency;
 
-    if (changed) BdApi.Data.save(this.PLUGIN_NAME, "settings", next);
     return next;
   }
 
@@ -276,7 +250,6 @@ module.exports = class BgVideo {
     };
     const boolean = (value, fallback) => typeof value === "boolean" ? value : fallback;
 
-    result.sourceMode = result.sourceMode === "youtube" ? "youtube" : "url";
     result.mediaUrl = this.normalizeMediaUrl(result.mediaUrl);
     result.objectFit = ["cover", "contain", "fill"].includes(result.objectFit) ? result.objectFit : "cover";
     result.objectPosition = ["center", "top", "bottom"].includes(result.objectPosition) ? result.objectPosition : "center";
@@ -293,7 +266,8 @@ module.exports = class BgVideo {
     result.autoRecoverPlayback = boolean(result.autoRecoverPlayback, this.defaults.autoRecoverPlayback);
     result.stallThresholdSeconds = clamp(result.stallThresholdSeconds, 1, 30, this.defaults.stallThresholdSeconds);
     result.pauseWhenHidden = boolean(result.pauseWhenHidden, this.defaults.pauseWhenHidden);
-    result.forceTransparency = this.defaults.forceTransparency;
+    delete result.sourceMode;
+    delete result.forceTransparency;
     result.onboardingDismissed = boolean(result.onboardingDismissed, this.defaults.onboardingDismissed);
     result.debug = boolean(result.debug, this.defaults.debug);
     return result;
@@ -351,14 +325,11 @@ module.exports = class BgVideo {
     try {
       const url = new URL(input.trim());
       if (!["http:", "https:"].includes(url.protocol)) return null;
+      if (url.username || url.password) return null;
       return url;
     } catch {
       return null;
     }
-  }
-
-  isHttpUrl(input) {
-    return !!this.parseHttpUrl(input);
   }
 
   isYouTubeHost(hostname) {
@@ -370,11 +341,6 @@ module.exports = class BgVideo {
       "youtu.be",
       "youtube-nocookie.com",
     ].includes(host);
-  }
-
-  isYouTubeUrl(input) {
-    const url = this.parseHttpUrl(input);
-    return !!url && this.isYouTubeHost(url.hostname);
   }
 
   normalizeMediaUrl(input) {
@@ -417,7 +383,7 @@ module.exports = class BgVideo {
     }
   }
 
-  resolveMediaSource(input, sourceMode = this.settings.sourceMode) {
+  resolveMediaSource(input) {
     const url = this.normalizeMediaUrl(input);
     if (!url) return null;
 
@@ -429,8 +395,6 @@ module.exports = class BgVideo {
     if (this.isYouTubeHost(parsed.hostname) && (videoId || playlistId)) {
       return { type: "youtube", url, videoId, playlistId };
     }
-    if (sourceMode === "youtube") return null;
-
     const extension = this.getMediaExtension(url);
     const videoExtensions = ["mp4", "webm", "ogv", "ogg"];
     const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
@@ -439,13 +403,8 @@ module.exports = class BgVideo {
     return null;
   }
 
-  validateMediaUrl(input, sourceMode = this.settings.sourceMode) {
-    return !!this.resolveMediaSource(input, sourceMode);
-  }
-
-  detectMediaKindFromUrl(url) {
-    const source = this.resolveMediaSource(url, "url");
-    return source ? source.type : null;
+  validateMediaUrl(input) {
+    return !!this.resolveMediaSource(input);
   }
 
   checkWebPSupport() {
@@ -568,18 +527,16 @@ module.exports = class BgVideo {
     this.clearRecoveryTimer();
     this._recoveryAttempts = 0;
     this._recoveryWindowStartedAt = 0;
-    if (!this._mediaNode) {
-      this._mediaSource = null;
-      return;
-    }
-    if (this._mediaNode.tagName === "VIDEO") {
-      try { this._mediaNode.pause(); } catch {}
-      this._mediaNode.removeAttribute("src");
-      try { this._mediaNode.load(); } catch {}
-    }
-    this._mediaNode.remove?.();
+    const node = this._mediaNode;
     this._mediaNode = null;
     this._mediaSource = null;
+    if (!node) return;
+    if (node.tagName === "VIDEO") {
+      try { node.pause(); } catch {}
+      node.removeAttribute("src");
+      try { node.load(); } catch {}
+    }
+    node.remove?.();
   }
 
   createMediaContainer() {
@@ -623,8 +580,6 @@ module.exports = class BgVideo {
   refreshTransparencyShell() {
     try {
       this.clearTransparencyMarks();
-      if (!this.settings.forceTransparency) return;
-
       const mount = document.getElementById("app-mount");
       if (!mount || !window.innerWidth || !window.innerHeight) return;
 
@@ -689,7 +644,7 @@ module.exports = class BgVideo {
       return false;
     }
 
-    const source = this.resolveMediaSource(sourceUrl, settings.sourceMode);
+    const source = this.resolveMediaSource(sourceUrl);
     if (!source) {
       this.setStatus("error", this.t("invalidUrl"));
       if (options.notify !== false) this.toast(this.t("invalidUrl"), "error");
@@ -767,6 +722,17 @@ module.exports = class BgVideo {
       this._recoveryAttempts = 0;
       this._recoveryWindowStartedAt = 0;
       this.setStatus("ready", this.mediaTypeLabel("video"));
+    });
+    video.addEventListener("pause", () => {
+      if (
+        video !== this._mediaNode ||
+        !video.autoplay ||
+        this._visibilityHidden ||
+        this._pausedForVisibility ||
+        this._pausedForReducedMotion ||
+        this.shouldReduceMotion()
+      ) return;
+      this.scheduleVideoRecovery(video, true);
     });
     video.addEventListener("waiting", () => this.scheduleVideoRecovery(video));
     video.addEventListener("stalled", () => this.scheduleVideoRecovery(video));
@@ -889,11 +855,9 @@ module.exports = class BgVideo {
       "#app-mount{position:relative!important;z-index:2!important;background:transparent!important;background-image:none!important;}",
       "#app-mount>div,#app-mount>div>div,#app-mount>div>div>div,#app-mount>div>div>div>div{background:transparent!important;background-image:none!important;}",
     ];
-    if (settings.forceTransparency) {
-      baseShellCss.push(
-        "#app-mount [data-bgv-shell=\"true\"],#app-mount [class^=\"app-\"],#app-mount [class*=\" app-\"],#app-mount [class^=\"appMount-\"],#app-mount [class*=\" appMount-\"],#app-mount [class^=\"layers-\"],#app-mount [class*=\" layers-\"],#app-mount [class^=\"layer-\"],#app-mount [class*=\" layer-\"],#app-mount [class^=\"base-\"],#app-mount [class*=\" base-\"],#app-mount [class^=\"bg-\"],#app-mount [class*=\" bg-\"]{background:transparent!important;background-image:none!important;}",
-      );
-    }
+    baseShellCss.push(
+      "#app-mount [data-bgv-shell=\"true\"],#app-mount [class^=\"app-\"],#app-mount [class*=\" app-\"],#app-mount [class^=\"appMount-\"],#app-mount [class*=\" appMount-\"],#app-mount [class^=\"layers-\"],#app-mount [class*=\" layers-\"],#app-mount [class^=\"layer-\"],#app-mount [class*=\" layer-\"],#app-mount [class^=\"base-\"],#app-mount [class*=\" base-\"],#app-mount [class^=\"bg-\"],#app-mount [class*=\" bg-\"]{background:transparent!important;background-image:none!important;}",
+    );
     return [
       "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;user-select:none!important;-webkit-user-drag:none!important;z-index:1!important;opacity:var(--bgv-opacity," + settings.opacity + ");filter:blur(var(--bgv-blur," + settings.blur + "px)) saturate(var(--bgv-saturate," + settings.saturate + ")) brightness(var(--bgv-brightness," + settings.brightness + "));overflow:hidden;isolation:isolate;}",
       "#bgVideo-media{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:" + settings.objectFit + ";object-position:" + settings.objectPosition + ";pointer-events:none!important;visibility:visible!important;}",
@@ -914,10 +878,7 @@ module.exports = class BgVideo {
       this._mediaNode.style.objectFit = settings.objectFit;
       this._mediaNode.style.objectPosition = settings.objectPosition;
     }
-    if (this._started) {
-      if (settings.forceTransparency) this.refreshTransparencyShell();
-      else this.clearTransparencyMarks();
-    }
+    if (this._started) this.refreshTransparencyShell();
     this.applyLiveVars(settings);
   }
 
@@ -1079,10 +1040,7 @@ module.exports = class BgVideo {
     this._statusDetailElement = statusDetail;
     this.updateStatusElement();
 
-    const draft = {
-      sourceMode: this.settings.sourceMode,
-      mediaUrl: this.settings.mediaUrl,
-    };
+    const draft = { mediaUrl: this.settings.mediaUrl };
 
     const clearChildren = (node) => {
       while (node.firstChild) node.removeChild(node.firstChild);
@@ -1116,6 +1074,10 @@ module.exports = class BgVideo {
         block.appendChild(descriptionNode);
       }
       if (control) block.appendChild(control);
+      const fields = control?.matches?.("input,select")
+        ? [control]
+        : Array.from(control?.querySelectorAll?.("input,select") || []);
+      fields.forEach((field) => field.setAttribute("aria-label", label));
       return block;
     };
     const select = (options, value, onChange) => {
@@ -1133,20 +1095,9 @@ module.exports = class BgVideo {
     };
 
     const sourceSection = section(this.t("source"), this.t("mediaUrlHint"));
-    const sourceGrid = document.createElement("div");
-    sourceGrid.className = "bgv-grid";
-    const sourceSelect = select([
-      { label: this.t("remoteUrl"), value: "url" },
-      { label: this.t("youtube"), value: "youtube" },
-    ], draft.sourceMode, (value) => {
-      draft.sourceMode = value;
-      renderSourceFields();
-    });
-    sourceGrid.appendChild(row(this.t("sourceMode"), "", sourceSelect));
     const mediaRow = document.createElement("div");
-    mediaRow.className = "bgv-row bgv-full";
-    sourceGrid.appendChild(mediaRow);
-    sourceSection.appendChild(sourceGrid);
+    mediaRow.className = "bgv-row";
+    sourceSection.appendChild(mediaRow);
     card.appendChild(sourceSection);
 
     const renderSourceFields = () => {
@@ -1158,13 +1109,14 @@ module.exports = class BgVideo {
       const input = document.createElement("input");
       input.className = "bgv-input";
       input.type = "url";
+      input.setAttribute("aria-label", this.t("mediaUrl"));
       input.spellcheck = false;
       input.value = draft.mediaUrl || "";
       const error = document.createElement("div");
       error.className = "bgv-error";
       const updateError = () => {
         const value = this.normalizeMediaUrl(input.value);
-        const valid = !value || this.validateMediaUrl(value, draft.sourceMode);
+        const valid = !value || this.validateMediaUrl(value);
         input.classList.toggle("bgv-invalid", !valid);
         error.textContent = valid ? "" : this.t("invalidUrl");
       };
@@ -1238,15 +1190,12 @@ module.exports = class BgVideo {
     playbackGrid.className = "bgv-grid";
     playbackGrid.appendChild(row(this.t("autoplay"), "", this.makeToggle("", this.settings.youtubeAutoplay, (value) => {
       this.saveSettings({ youtubeAutoplay: value });
-      this.applyPlaybackSettings();
     })));
     playbackGrid.appendChild(row(this.t("loop"), "", this.makeToggle("", this.settings.youtubeLoop, (value) => {
       this.saveSettings({ youtubeLoop: value });
-      this.applyPlaybackSettings();
     })));
     playbackGrid.appendChild(row(this.t("muted"), "", this.makeToggle("", this.settings.youtubeMuted, (value) => {
       this.saveSettings({ youtubeMuted: value });
-      this.applyPlaybackSettings();
     })));
     playbackSection.appendChild(playbackGrid);
     card.appendChild(playbackSection);
@@ -1260,14 +1209,12 @@ module.exports = class BgVideo {
       { label: this.t("ignoreMotion"), value: "ignore" },
     ], this.settings.reducedMotionBehavior, (value) => {
       this.saveSettings({ reducedMotionBehavior: value });
-      this.applyReducedMotion();
     }), true));
     behaviorGrid.appendChild(row(this.t("autoRecover"), this.t("autoRecoverHint"), this.makeToggle("", this.settings.autoRecoverPlayback, (value) => {
       this.saveSettings({ autoRecoverPlayback: value });
     })));
     behaviorGrid.appendChild(row(this.t("pauseWhenHidden"), this.t("pauseWhenHiddenHint"), this.makeToggle("", this.settings.pauseWhenHidden, (value) => {
       this.saveSettings({ pauseWhenHidden: value });
-      this.applyVisibilityState();
     })));
     behaviorGrid.appendChild((() => {
       const line = document.createElement("div");
@@ -1325,7 +1272,7 @@ module.exports = class BgVideo {
       return button;
     };
     const validateDraft = () => {
-      const source = this.resolveMediaSource(draft.mediaUrl, draft.sourceMode);
+      const source = this.resolveMediaSource(draft.mediaUrl);
       if (!source) {
         this.toast(this.t("invalidUrl"), "error");
         return null;
@@ -1336,14 +1283,16 @@ module.exports = class BgVideo {
       const source = validateDraft();
       if (!source) return;
       draft.mediaUrl = this.normalizeMediaUrl(draft.mediaUrl);
-      this.saveSettings({ sourceMode: draft.sourceMode, mediaUrl: draft.mediaUrl });
+      this.saveSettings({ mediaUrl: draft.mediaUrl });
       this._renderSettings = null;
-      this.updateMediaSource({ notify: true }).then(() => this.toast(this.t("applied"), "success"));
+      this.updateMediaSource({ notify: true }).then((loaded) => {
+        if (loaded) this.toast(this.t("applied"), "success");
+      });
     }));
     buttons.appendChild(makeButton(this.t("test"), "", () => {
       if (!validateDraft()) return;
       this.updateMediaSource({
-        settings: { ...this.settings, sourceMode: draft.sourceMode, mediaUrl: draft.mediaUrl },
+        settings: { ...this.settings, mediaUrl: draft.mediaUrl },
         preview: true,
         notify: true,
       });

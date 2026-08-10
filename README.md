@@ -6,7 +6,7 @@ BetterDiscord plugin for displaying remote video, images, or YouTube behind the 
 
 - MP4, WebM, OGV, OGG, PNG, JPG, GIF, WebP, AVIF, and BMP media
 - YouTube watch, share, Shorts, Live, and playlist URLs
-- Opacity, blur, saturation, brightness, object fit, and position controls
+- Opacity, blur, saturation, and brightness controls
 - Autoplay, loop, and muted playback
 - Reduced-motion support: pause, hide, or ignore
 - Pause while Discord is hidden
@@ -31,8 +31,8 @@ Keep the filename as `BgVideo.plugin.js`.
 
 ## Settings
 
-- **Source**: remote media URL or YouTube URL
-- **Appearance**: opacity, blur, saturation, brightness, fit, and position
+- **Source**: one URL field; direct media and YouTube are detected automatically
+- **Appearance**: opacity, blur, saturation, and brightness
 - **Playback**: autoplay, loop, and muted
 - **Behavior**: reduced motion, hidden-window pause, and recovery limits
 - **Diagnostics**: current media state and optional debug logging
@@ -57,5 +57,6 @@ The plugin includes BetterDiscord updater metadata. Automatic detection depends 
 ## Limitations
 
 - URLs must use HTTP(S) and a supported media type.
+- URLs containing embedded usernames or passwords are rejected; use a signed query URL instead.
 - YouTube playback requires embedding to be allowed.
 - Supported codecs depend on Discord's Chromium runtime and the media server's headers.
