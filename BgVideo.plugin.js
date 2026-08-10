@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.1.1
+ * @version 1.1.2
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -466,7 +466,7 @@ module.exports = class BgVideo {
 
   syncNodeVisibility() {
     if (!this._mediaNode) return;
-    this._mediaNode.style.display = this._motionHidden || this._visibilityHidden ? "none" : "";
+    this._mediaNode.style.display = this._motionHidden ? "none" : "";
   }
 
   applyReducedMotion() {
