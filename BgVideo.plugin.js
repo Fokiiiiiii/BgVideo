@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.1.2
+ * @version 1.1.3
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -236,9 +236,6 @@ module.exports = class BgVideo {
         delete next[key];
       }
     }
-    delete next.sourceMode;
-    delete next.forceTransparency;
-
     return next;
   }
 
@@ -352,8 +349,7 @@ module.exports = class BgVideo {
     return typeof value === "string" && /^[A-Za-z0-9_-]{11}$/.test(value) ? value : null;
   }
 
-  parseYouTubeVideoId(input) {
-    const url = this.parseHttpUrl(input);
+  parseYouTubeVideoId(url) {
     if (!url || !this.isYouTubeHost(url.hostname)) return null;
 
     let candidate = url.searchParams.get("v");
@@ -367,21 +363,15 @@ module.exports = class BgVideo {
     return this.normalizeYouTubeId(candidate);
   }
 
-  parseYouTubePlaylistId(input) {
-    const url = this.parseHttpUrl(input);
+  parseYouTubePlaylistId(url) {
     if (!url || !this.isYouTubeHost(url.hostname)) return null;
     const playlistId = url.searchParams.get("list");
     return playlistId && /^[A-Za-z0-9_-]+$/.test(playlistId) ? playlistId : null;
   }
 
   getMediaExtension(url) {
-    try {
-      const parsed = new URL(url);
-      const match = parsed.pathname.match(/\.([a-z0-9]+)$/i);
-      return match ? match[1].toLowerCase() : "";
-    } catch {
-      return "";
-    }
+    const match = url?.pathname?.match(/\.([a-z0-9]+)$/i);
+    return match ? match[1].toLowerCase() : "";
   }
 
   resolveMediaSource(input) {
@@ -391,12 +381,12 @@ module.exports = class BgVideo {
     const parsed = this.parseHttpUrl(url);
     if (!parsed) return null;
 
-    const videoId = this.parseYouTubeVideoId(url);
-    const playlistId = this.parseYouTubePlaylistId(url);
+    const videoId = this.parseYouTubeVideoId(parsed);
+    const playlistId = this.parseYouTubePlaylistId(parsed);
     if (this.isYouTubeHost(parsed.hostname) && (videoId || playlistId)) {
       return { type: "youtube", url, videoId, playlistId };
     }
-    const extension = this.getMediaExtension(url);
+    const extension = this.getMediaExtension(parsed);
     const videoExtensions = ["mp4", "webm", "ogv", "ogg"];
     const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
     if (videoExtensions.includes(extension)) return { type: "video", url, extension };
@@ -625,12 +615,12 @@ module.exports = class BgVideo {
 
   refreshTransparencyShell() {
     try {
-      this.clearTransparencyMarks();
       const mount = document.getElementById("app-mount");
       if (!mount || !window.innerWidth || !window.innerHeight) return;
 
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
+      const nextMarked = new Set();
       const candidates = [mount];
       let frontier = Array.from(mount.children || []);
 
@@ -654,9 +644,13 @@ module.exports = class BgVideo {
         const hasVisibleBackground = backgroundImage !== "none";
         if (!hasVisibleBackground && !(Number.isFinite(alpha) && alpha > 0.02)) return;
 
-        element.setAttribute("data-bgv-shell", "true");
-        this._transparencyMarked.add(element);
+        if (element.getAttribute("data-bgv-shell") !== "true") element.setAttribute("data-bgv-shell", "true");
+        nextMarked.add(element);
       });
+      this._transparencyMarked.forEach((element) => {
+        if (!nextMarked.has(element)) element?.removeAttribute?.("data-bgv-shell");
+      });
+      this._transparencyMarked = nextMarked;
     } catch (error) {
       this.log("Discord transparency scan failed", error);
     }
@@ -680,7 +674,7 @@ module.exports = class BgVideo {
 
   async updateMediaSource(options = {}) {
     const settings = this.sanitizeSettings(options.settings || this.settings);
-    const sourceUrl = this.normalizeMediaUrl(settings.mediaUrl);
+    const sourceUrl = settings.mediaUrl;
     const requestId = ++this._renderRequestId;
 
     if (!sourceUrl) {
@@ -1101,9 +1095,6 @@ module.exports = class BgVideo {
 
     const draft = { mediaUrl: this.settings.mediaUrl };
 
-    const clearChildren = (node) => {
-      while (node.firstChild) node.removeChild(node.firstChild);
-    };
     const section = (name, hint) => {
       const block = document.createElement("section");
       block.className = "bgv-section";
@@ -1160,7 +1151,7 @@ module.exports = class BgVideo {
     card.appendChild(sourceSection);
 
     const renderSourceFields = () => {
-      clearChildren(mediaRow);
+      mediaRow.replaceChildren();
       const labelNode = document.createElement("div");
       labelNode.className = "bgv-label";
       labelNode.textContent = this.t("mediaUrl");
