@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Loop an MP4/WebM/Image/YouTube as a background media
- * @version 1.1.3
+ * @version 1.1.4
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -187,12 +187,8 @@ module.exports = class BgVideo {
     this._started = false;
     this._motionQuery = null;
     this._onMotionChange = null;
-    this._transparencyObserver = null;
-    this._transparencyScanTimer = null;
-    this._transparencyMarked = new Set();
 
     this._onVisibilityOrFocus = this._onVisibilityOrFocus.bind(this);
-    this._onViewportResize = this.scheduleTransparencyScan.bind(this);
   }
 
   // --- I18N ---
@@ -587,91 +583,6 @@ module.exports = class BgVideo {
     return wrapper;
   }
 
-  clearTransparencyMarks() {
-    this._transparencyMarked.forEach((element) => {
-      if (element?.removeAttribute) element.removeAttribute("data-bgv-shell");
-    });
-    this._transparencyMarked.clear();
-  }
-
-  stopTransparencyShell() {
-    if (this._transparencyScanTimer) {
-      clearTimeout(this._transparencyScanTimer);
-      this._transparencyScanTimer = null;
-    }
-    this._transparencyObserver?.disconnect();
-    this._transparencyObserver = null;
-    window.removeEventListener("resize", this._onViewportResize);
-    this.clearTransparencyMarks();
-  }
-
-  scheduleTransparencyScan() {
-    if (!this._started || this._transparencyScanTimer) return;
-    this._transparencyScanTimer = setTimeout(() => {
-      this._transparencyScanTimer = null;
-      this.refreshTransparencyShell();
-    }, 250);
-  }
-
-  refreshTransparencyShell() {
-    try {
-      const mount = document.getElementById("app-mount");
-      if (!mount || !window.innerWidth || !window.innerHeight) return;
-
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const nextMarked = new Set();
-      const candidates = [mount];
-      let frontier = Array.from(mount.children || []);
-
-      for (let depth = 0; depth < 5 && frontier.length; depth += 1) {
-        candidates.push(...frontier);
-        frontier = frontier.flatMap((element) => Array.from(element.children || [])).slice(0, 512);
-      }
-
-      candidates.forEach((element) => {
-        if (!element || element.nodeType !== 1 || element === this._mediaNode) return;
-        const rect = element.getBoundingClientRect?.();
-        if (!rect || rect.left > 2 || rect.top > 2 || rect.width < viewportWidth * 0.9 || rect.height < viewportHeight * 0.9) return;
-
-        const style = window.getComputedStyle(element);
-        const backgroundImage = style.backgroundImage || "none";
-        const backgroundColor = style.backgroundColor || "transparent";
-        const rgba = backgroundColor.match(/rgba?\(([^)]+)\)/i);
-        const alpha = rgba && rgba[1].split(",")[3] !== undefined
-          ? Number.parseFloat(rgba[1].split(",")[3])
-          : (backgroundColor === "transparent" ? 0 : 1);
-        const hasVisibleBackground = backgroundImage !== "none";
-        if (!hasVisibleBackground && !(Number.isFinite(alpha) && alpha > 0.02)) return;
-
-        if (element.getAttribute("data-bgv-shell") !== "true") element.setAttribute("data-bgv-shell", "true");
-        nextMarked.add(element);
-      });
-      this._transparencyMarked.forEach((element) => {
-        if (!nextMarked.has(element)) element?.removeAttribute?.("data-bgv-shell");
-      });
-      this._transparencyMarked = nextMarked;
-    } catch (error) {
-      this.log("Discord transparency scan failed", error);
-    }
-  }
-
-  startTransparencyShell() {
-    try {
-      const mount = document.getElementById("app-mount");
-      if (!mount) return;
-
-      this._transparencyObserver?.disconnect();
-      this._transparencyObserver = new MutationObserver(() => this.scheduleTransparencyScan());
-      this._transparencyObserver.observe(mount, { childList: true });
-      window.addEventListener("resize", this._onViewportResize, { passive: true });
-      this.refreshTransparencyShell();
-    } catch (error) {
-      this.log("Discord transparency hook failed", error);
-      this.stopTransparencyShell();
-    }
-  }
-
   async updateMediaSource(options = {}) {
     const settings = this.sanitizeSettings(options.settings || this.settings);
     const sourceUrl = settings.mediaUrl;
@@ -903,20 +814,13 @@ module.exports = class BgVideo {
     const iframeCover = settings.objectFit === "cover"
       ? "width:150vw;height:150vh;left:-25vw;top:-25vh;position:absolute;"
       : "";
-    const baseShellCss = [
-      "html,body{background:transparent!important;}",
-      "#app-mount{position:relative!important;z-index:2!important;background:transparent!important;background-image:none!important;}",
-      "#app-mount>div,#app-mount>div>div,#app-mount>div>div>div,#app-mount>div>div>div>div{background:transparent!important;background-image:none!important;}",
-    ];
-    baseShellCss.push(
-      "#app-mount [data-bgv-shell=\"true\"],#app-mount [class^=\"app-\"],#app-mount [class*=\" app-\"],#app-mount [class^=\"appMount-\"],#app-mount [class*=\" appMount-\"],#app-mount [class^=\"layers-\"],#app-mount [class*=\" layers-\"],#app-mount [class^=\"layer-\"],#app-mount [class*=\" layer-\"],#app-mount [class^=\"base-\"],#app-mount [class*=\" base-\"],#app-mount [class^=\"bg-\"],#app-mount [class*=\" bg-\"]{background:transparent!important;background-image:none!important;}",
-    );
     return [
-      "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;user-select:none!important;-webkit-user-drag:none!important;z-index:1!important;opacity:var(--bgv-opacity," + settings.opacity + ");filter:blur(var(--bgv-blur," + settings.blur + "px)) saturate(var(--bgv-saturate," + settings.saturate + ")) brightness(var(--bgv-brightness," + settings.brightness + "));overflow:hidden;isolation:isolate;}",
+      "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;z-index:1!important;opacity:var(--bgv-opacity," + settings.opacity + ");filter:blur(var(--bgv-blur," + settings.blur + "px)) saturate(var(--bgv-saturate," + settings.saturate + ")) brightness(var(--bgv-brightness," + settings.brightness + "));overflow:hidden;}",
       "#bgVideo-media{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:" + settings.objectFit + ";object-position:" + settings.objectPosition + ";pointer-events:none!important;visibility:visible!important;}",
       "iframe#bgVideo-media{" + iframeCover + "}",
       "video#bgVideo-media::-webkit-media-controls,video#bgVideo-media::-webkit-media-controls-enclosure,video#bgVideo-media::-webkit-media-controls-panel,video#bgVideo-media::-webkit-media-controls-play-button,video#bgVideo-media::-webkit-media-controls-start-playback-button{display:none!important;opacity:0!important;pointer-events:none!important;-webkit-appearance:none!important;}",
-      baseShellCss.join(""),
+      "html,body{background:transparent!important;background-image:none!important;}",
+      "#app-mount{position:relative!important;z-index:2!important;background:transparent!important;background-image:none!important;}",
     ].join("");
   }
 
@@ -931,7 +835,6 @@ module.exports = class BgVideo {
       this._mediaNode.style.objectFit = settings.objectFit;
       this._mediaNode.style.objectPosition = settings.objectPosition;
     }
-    if (this._started) this.refreshTransparencyShell();
     this.applyLiveVars(settings);
   }
 
@@ -982,7 +885,6 @@ module.exports = class BgVideo {
     this.attachReducedMotionHandler();
     document.addEventListener("visibilitychange", this._onVisibilityOrFocus);
     window.addEventListener("focus", this._onVisibilityOrFocus);
-    this.startTransparencyShell();
     this.updateMediaSource();
   }
 
@@ -992,7 +894,6 @@ module.exports = class BgVideo {
     document.removeEventListener("visibilitychange", this._onVisibilityOrFocus);
     window.removeEventListener("focus", this._onVisibilityOrFocus);
     this.detachReducedMotionHandler();
-    this.stopTransparencyShell();
     this.flushPersist();
     this.destroyRenderer();
     const wrapper = document.getElementById("bgVideo-wrapper");
