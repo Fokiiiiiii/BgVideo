@@ -1,62 +1,56 @@
 # BgVideo
 
-BetterDiscord plugin for displaying remote video, images, or YouTube behind the Discord interface.
+BetterDiscord plugin that plays a looping video, image, or YouTube embed behind the Discord interface.
 
 ## Features
 
 - MP4, WebM, OGV, OGG, PNG, JPG, GIF, WebP, AVIF, and BMP media
 - YouTube watch, share, Shorts, Live, and playlist URLs
-- Opacity, blur, saturation, and brightness controls
-- Autoplay, loop, and muted playback
-- Reduced-motion support: pause, hide, or ignore
-- Pause while Discord is hidden
-- Bounded recovery for stalled or failed direct video playback
-- Lightweight single-file plugin with full cleanup on stop
+- Opacity, blur, brightness, and saturation that update while you drag
+- Autoplay, loop, and mute
+- Pauses while Discord is hidden and follows the system's reduce motion setting
+- Restarts a stalled direct video, up to three times a minute
+- Settings in English or Japanese, following Discord's language
+- Single file with no dependencies and full cleanup on stop
 
 ## Install
 
 1. Download [`BgVideo.plugin.js`](https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js).
-2. Copy it to the BetterDiscord plugins folder.
-3. Open **User Settings → BetterDiscord → Plugins**.
-4. Enable **BgVideo** and open its settings.
+2. Copy it to the BetterDiscord plugins folder. Keep the file name.
+3. Enable **BgVideo** in **User Settings → BetterDiscord → Plugins**.
 
-On the first settings screen, complete the setup in this order:
+## Setup
 
-1. Enter a direct media URL or a YouTube URL.
-2. Click **Test** to preview it without saving.
-3. Click **Apply** to save and start the background.
-4. Use a BetterDiscord theme that lets you edit the app background and transparency. See the theme requirement below if the video is hidden.
+Open the plugin settings, paste a direct media URL or a YouTube URL into **Background URL**, and press **Apply** or Enter.
 
-Keep the filename as `BgVideo.plugin.js`.
+- **Preview** shows the URL without saving it.
+- Clear the field and press **Apply** to remove the background.
+- The dot under the field shows the state: green while the background is showing, yellow while it loads, blue during a preview, and red on errors.
 
 ## Settings
 
-- **Source**: one URL field; direct media and YouTube are detected automatically
-- **Appearance**: opacity, blur, saturation, and brightness
-- **Playback**: autoplay, loop, and muted
-- **Behavior**: reduced motion, hidden-window pause, and recovery limits
-- **Diagnostics**: current media state and optional debug logging
-
-**Test** previews a source without saving it. **Apply** validates, saves, and loads it.
+- **Appearance**: opacity, blur, brightness, and saturation
+- **Playback**: autoplay, loop, and mute
+- **Advanced** (collapsed): what to do when reduce motion is on, pausing while Discord is hidden, restarting stalled videos, debug logging, and a reset button that asks before clearing everything
 
 ## Theme requirement
 
-BgVideo does not include or select a specific theme. To display the video behind Discord, use a BetterDiscord theme that provides controls for:
+BgVideo places the media behind Discord and makes the page background transparent, but most themes paint their own opaque background on top. Use a theme that lets you change its app background, shading, or transparency, and make that background transparent. If the status says the background is showing but you cannot see it, the theme is covering it.
 
-- App background image or background source
-- Background opacity or shading
-- Transparent app layers
-- Theme Custom CSS or equivalent background variables
+## Performance
 
-If the active theme keeps the app background opaque and provides no way to change it, the media can load and play while remaining invisible behind the Discord interface.
+- Blur is the most expensive effect. Keep it at 0 for the lowest GPU use.
+- Neutral values (blur 0, brightness 100%, saturation 100%) are skipped and cost nothing.
+- Playback pauses while Discord is hidden unless you turn that off.
+- YouTube embeds are sized to just cover the window, so YouTube does not pick a larger stream than needed.
+- A 1080p video is usually enough for a background; 4K files take much more decoding work.
 
 ## Updates
 
-The plugin includes BetterDiscord updater metadata. Automatic detection depends on the BetterDiscord Store being available and the plugin being accepted there. Until then, replace the file manually with the latest version from the fixed Raw URL above.
+The plugin includes BetterDiscord updater metadata. Automatic detection depends on the plugin being available in the BetterDiscord Store. Until then, replace the file with the latest version from the Raw URL above.
 
 ## Limitations
 
-- URLs must use HTTP(S) and a supported media type.
-- URLs containing embedded usernames or passwords are rejected; use a signed query URL instead.
-- YouTube playback requires embedding to be allowed.
+- URLs must use HTTP(S) and a supported media type. URLs with embedded usernames or passwords are rejected; use a signed query URL instead.
+- YouTube playback requires the video to allow embedding.
 - Supported codecs depend on Discord's Chromium runtime and the media server's headers.
