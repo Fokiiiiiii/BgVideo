@@ -191,7 +191,6 @@ module.exports = class BgVideo {
     this._onVisibilityOrFocus = this._onVisibilityOrFocus.bind(this);
   }
 
-  // --- I18N ---
   getLang() {
     const locale = (typeof document !== "undefined" && document.documentElement?.lang)
       || (typeof navigator !== "undefined" && navigator.language)
@@ -204,7 +203,6 @@ module.exports = class BgVideo {
     return dict[key] || STRINGS.en[key] || key;
   }
 
-  // --- SETTINGS ---
   loadSettings() {
     const saved = BdApi.Data.load(this.PLUGIN_NAME, "settings");
     const migrated = this.migrateSettings(saved);
@@ -225,8 +223,6 @@ module.exports = class BgVideo {
       delete next.respectReducedMotion;
     }
 
-    // These settings belonged to the removed local-file mode. Keep migration safe without
-    // reintroducing file:// access into the current dependency-free plugin.
     for (const key of ["localFilePath", "localFileMeta", "maxBlobMB"]) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {
         delete next[key];
@@ -282,7 +278,6 @@ module.exports = class BgVideo {
     return true;
   }
 
-  // --- LOGGING / STATUS ---
   log(...args) {
     if (!this.settings.debug) return;
     console.log("[" + this.PLUGIN_NAME + "]", ...args);
@@ -313,7 +308,6 @@ module.exports = class BgVideo {
     this._statusDetailElement.textContent = this._status.detail || this.t("noSource");
   }
 
-  // --- URL / MEDIA DETECTION ---
   parseHttpUrl(input) {
     if (typeof input !== "string") return null;
     try {
@@ -414,7 +408,6 @@ module.exports = class BgVideo {
     return this._webpSupportPromise;
   }
 
-  // --- REDUCED MOTION / VISIBILITY ---
   attachReducedMotionHandler() {
     if (this._motionQuery || typeof window.matchMedia !== "function") return;
     try {
@@ -545,7 +538,6 @@ module.exports = class BgVideo {
     });
   }
 
-  // --- RENDERERS ---
   clearRecoveryTimer() {
     if (this._recoveryTimer) clearTimeout(this._recoveryTimer);
     this._recoveryTimer = null;
@@ -802,14 +794,11 @@ module.exports = class BgVideo {
       node.muted = !!settings.youtubeMuted;
       if (node.autoplay && !this.shouldReduceMotion() && !this._visibilityHidden) this.resumeVideo(node);
     } else if (node.tagName === "IFRAME" && this._mediaSource?.type === "youtube") {
-      // YouTube playback parameters live in the iframe URL, so reload only when a
-      // playback toggle actually changes instead of rebuilding during slider drags.
       const desired = this.createYouTubeRenderer(this._mediaSource, settings);
       if (node.src !== desired.src) node.src = desired.src;
     }
   }
 
-  // --- STYLING ---
   buildCss(settings = this._renderSettings || this.settings) {
     const iframeCover = settings.objectFit === "cover"
       ? "width:150vw;height:150vh;left:-25vw;top:-25vh;position:absolute;"
@@ -878,7 +867,6 @@ module.exports = class BgVideo {
     if (wrapper) wrapper.style.pointerEvents = "none";
   }
 
-  // --- LIFECYCLE ---
   start() {
     if (this._started) return;
     this._started = true;
@@ -906,7 +894,6 @@ module.exports = class BgVideo {
     this._statusDetailElement = null;
   }
 
-  // --- SETTINGS UI ---
   getSettingsPanel() {
     if (!this._panelCssMounted) {
       const css = [
