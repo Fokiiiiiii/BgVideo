@@ -815,12 +815,12 @@ module.exports = class BgVideo {
       ? "width:150vw;height:150vh;left:-25vw;top:-25vh;position:absolute;"
       : "";
     return [
-      "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;z-index:1!important;opacity:var(--bgv-opacity," + settings.opacity + ");filter:blur(var(--bgv-blur," + settings.blur + "px)) saturate(var(--bgv-saturate," + settings.saturate + ")) brightness(var(--bgv-brightness," + settings.brightness + "));overflow:hidden;}",
+      "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;z-index:0!important;opacity:var(--bgv-opacity," + settings.opacity + ");filter:blur(var(--bgv-blur," + settings.blur + "px)) saturate(var(--bgv-saturate," + settings.saturate + ")) brightness(var(--bgv-brightness," + settings.brightness + "));overflow:hidden;}",
       "#bgVideo-media{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:" + settings.objectFit + ";object-position:" + settings.objectPosition + ";pointer-events:none!important;visibility:visible!important;}",
       "iframe#bgVideo-media{" + iframeCover + "}",
       "video#bgVideo-media::-webkit-media-controls,video#bgVideo-media::-webkit-media-controls-enclosure,video#bgVideo-media::-webkit-media-controls-panel,video#bgVideo-media::-webkit-media-controls-play-button,video#bgVideo-media::-webkit-media-controls-start-playback-button{display:none!important;opacity:0!important;pointer-events:none!important;-webkit-appearance:none!important;}",
       "html,body{background:transparent!important;background-image:none!important;}",
-      "#app-mount{position:relative!important;z-index:2!important;background:transparent!important;background-image:none!important;}",
+      "#app-mount{position:relative!important;z-index:1!important;background:transparent!important;background-image:none!important;--background-image:none!important;--background-shading:transparent!important;--hsl-background-shading:transparent!important;--background-shading-percent:0%!important;}",
     ].join("");
   }
 
