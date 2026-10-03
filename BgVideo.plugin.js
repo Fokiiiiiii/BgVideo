@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Plays a looping video, image, or YouTube embed behind the Discord interface.
- * @version 1.1.5
+ * @version 1.1.6
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -844,6 +844,7 @@ module.exports = class BgVideo {
       BdApi.DOM.addStyle(this.PANEL_STYLE_ID, [
         ".bgv-source{display:flex;flex-direction:column;gap:8px;margin-top:8px}",
         ".bgv-source-row{display:flex;align-items:center;gap:8px}",
+        ".bgv-btn{width:auto!important;min-width:60px!important;padding:0 14px!important;flex-shrink:0}",
         ".bgv-status{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;color:var(--text-muted)}",
         ".bgv-status::before{content:\"\";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;vertical-align:middle;background:var(--text-muted)}",
         ".bgv-status[data-state=ready]::before{background:var(--status-positive,#23a55a)}",
@@ -914,6 +915,7 @@ module.exports = class BgVideo {
               id: "reset",
               name: t("reset"),
               note: t("resetHint"),
+              className: "bgv-btn",
               children: t("resetButton"),
               color: Button.Colors.RED,
               size: Button.Sizes.SMALL,
@@ -980,6 +982,7 @@ module.exports = class BgVideo {
       h("div", { className: "bgv-source-row" },
         h("div", { className: "bgv-status", "data-state": invalid ? "error" : status.type, title: text }, text),
         h(Button, {
+          className: "bgv-btn",
           look: Button.Looks.OUTLINED,
           color: Button.Colors.PRIMARY,
           size: Button.Sizes.SMALL,
@@ -987,7 +990,7 @@ module.exports = class BgVideo {
           disabled: !source,
           onClick: preview,
         }, this.t("preview")),
-        h(Button, { size: Button.Sizes.SMALL, grow: false, disabled: invalid, onClick: apply }, this.t("apply")),
+        h(Button, { className: "bgv-btn", size: Button.Sizes.SMALL, grow: false, disabled: invalid, onClick: apply }, this.t("apply")),
       ),
     );
   }
