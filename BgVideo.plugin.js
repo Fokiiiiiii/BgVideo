@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Plays a looping video, image, or YouTube embed behind the Discord interface.
- * @version 1.1.6
+ * @version 1.1.7
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -945,7 +945,7 @@ module.exports = class BgVideo {
   renderSourceEditor() {
     const React = BdApi.React;
     const h = React.createElement;
-    const { TextInput, Button } = BdApi.Components;
+    const { Button } = BdApi.Components;
     const [draft, setDraft] = React.useState(this.settings.mediaUrl);
     const status = this.useStatus();
     const url = this.normalizeMediaUrl(draft);
@@ -968,9 +968,13 @@ module.exports = class BgVideo {
     const text = invalid ? this.t("invalidUrl") : this.statusText(status);
 
     return h("div", { className: "bgv-source", onPaste: (event) => event.stopPropagation() },
-      h(TextInput, {
+      h("input", {
+        className: "bd-text-input",
+        type: "text",
+        "aria-label": this.t("mediaUrl"),
+        autoFocus: true,
         value: draft,
-        onChange: setDraft,
+        onChange: (event) => setDraft(event.currentTarget.value),
         placeholder: this.t("mediaUrlPlaceholder"),
         onKeyDown: (event) => {
           event.stopPropagation();
