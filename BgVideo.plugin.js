@@ -967,15 +967,15 @@ module.exports = class BgVideo {
     };
     const text = invalid ? this.t("invalidUrl") : this.statusText(status);
 
-    return h("div", { className: "bgv-source" },
+    return h("div", { className: "bgv-source", onPaste: (event) => event.stopPropagation() },
       h(TextInput, {
         value: draft,
         onChange: setDraft,
         placeholder: this.t("mediaUrlPlaceholder"),
         onKeyDown: (event) => {
+          event.stopPropagation();
           if (event.key !== "Enter") return;
           event.preventDefault();
-          event.stopPropagation();
           apply();
         },
       }),
