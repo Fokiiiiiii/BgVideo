@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Plays a looping video, image, or YouTube embed behind the Discord interface.
- * @version 1.1.7
+ * @version 1.2.0
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -859,6 +859,13 @@ module.exports = class BgVideo {
     const React = BdApi.React;
     const Panel = () => {
       const [revision, setRevision] = React.useState(0);
+      React.useEffect(() => {
+        const keepFocus = (event) => {
+          if (event.target && event.target.closest && event.target.closest(".bd-addon-modal")) event.stopImmediatePropagation();
+        };
+        window.addEventListener("focusin", keepFocus, true);
+        return () => window.removeEventListener("focusin", keepFocus, true);
+      }, []);
       return React.createElement(React.Fragment, { key: revision }, this.buildSettingsPanel(() => setRevision((value) => value + 1)));
     };
     return React.createElement(Panel);
@@ -972,7 +979,6 @@ module.exports = class BgVideo {
         className: "bd-text-input",
         type: "text",
         "aria-label": this.t("mediaUrl"),
-        autoFocus: true,
         value: draft,
         onChange: (event) => setDraft(event.currentTarget.value),
         placeholder: this.t("mediaUrlPlaceholder"),
