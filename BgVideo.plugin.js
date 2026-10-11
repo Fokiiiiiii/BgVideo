@@ -967,7 +967,15 @@ module.exports = class BgVideo {
     };
     const text = invalid ? this.t("invalidUrl") : this.statusText(status);
 
-    return h("div", { className: "bgv-source", onPaste: (event) => event.stopPropagation() },
+    const stopInputEventPropagation = (event) => event.stopPropagation();
+
+    return h("div", {
+      className: "bgv-source",
+      onPasteCapture: stopInputEventPropagation,
+      onKeyDownCapture: stopInputEventPropagation,
+      onKeyPressCapture: stopInputEventPropagation,
+      onKeyUpCapture: stopInputEventPropagation,
+    },
       h(TextInput, {
         value: draft,
         onChange: setDraft,
