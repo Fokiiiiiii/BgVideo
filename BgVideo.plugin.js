@@ -933,6 +933,8 @@ module.exports = class BgVideo {
       "[class^=homeContainer_]", "[class^=applicationStore_]",
       "[class^=userPanelOuter_]", "[class^=userPanelInner_]", "[class^=userPanel_]", "[class^=profilePanel_]",
       "[class^=container_][class*=themed_]", "[class^=chat_] > [class^=header_]",
+      "[class*=themed_] > [class^=upperContainer_] > [class^=children_]",
+      "[class^=container_][class*=header_]:has(>[class^=reactButtons_])",
       "nav[class^=container_]", "main[class^=container_]",
       "[class^=container_]:has(>[class^=membersWrap_])", "[class^=container_]:has(>[class^=tabBody_])",
       "[class^=scrollerInner_] > [class^=wrapper_]", "[class^=scrollerInner_] > [class^=wrapper_] > [class^=wrapper_]",

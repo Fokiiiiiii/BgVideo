@@ -74,6 +74,19 @@ test("file selection changes only the draft; cancelling keeps the selected sourc
   assert.equal(draft, selected);
 });
 
+test("the transparency setting removes its overrides when turned off", (t) => {
+  const { plugin, BdApi } = setup(t);
+  let css = "";
+  BdApi.DOM.addStyle = (_name, value) => { css = value; };
+  plugin.onSettingChange("transparentBackground", true);
+  assert.ok(css.includes("background:transparent!important"));
+  plugin.onSettingChange("transparentBackground", false);
+  assert.equal(plugin.settings.transparentBackground, false);
+  assert.equal(css.includes("background:transparent!important"), false);
+  plugin.onSettingChange("transparentBackground", true);
+  assert.ok(css.includes("background:transparent!important"));
+});
+
 test("local files preserve binary bytes and detect file changes", async (t) => {
   const { plugin, folder } = setup(t);
   const file = path.join(folder, "video.mp4");
