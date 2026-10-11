@@ -3,7 +3,7 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Plays a looping video, image, or YouTube embed behind the Discord interface.
- * @version 1.3.0
+ * @version 1.3.5
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
@@ -11,17 +11,18 @@
 const STRINGS = {
   en: {
     mediaUrl: "Background URL or file",
-    mediaUrlHint: "A direct media URL, YouTube URL, or absolute file path. Choose a local video or image with Browse. Make your theme's app background transparent if it covers the background.",
+    mediaUrlHint: "Media URL, YouTube link, or local file (up to 200 MiB).",
+    recentSources: "Recent backgrounds",
     browse: "Browse",
     localError: "Could not read the local media file. Check the path and permissions.",
     fileTooLarge: "Local files must be 200 MiB or smaller.",
     cacheMedia: "Cache media",
-    cacheMediaHint: "Reuse loaded local files in memory. Save the most recent direct media download (up to 200 MiB) for the next launch. YouTube is not cached.",
+    cacheMediaHint: "Save one download up to 200 MiB. Excludes YouTube.",
     clearCache: "Clear cache",
     cacheCleared: "Cache cleared. The current background keeps playing.",
     cacheError: "Could not clear the media cache.",
     transparentBackground: "Make Discord's background transparent",
-    transparentBackgroundHint: "Clear the main app surfaces and common theme background images. Message popups and dialogs keep their backgrounds.",
+    transparentBackgroundHint: "Keep cards and dialogs readable.",
     mediaUrlPlaceholder: "https://example.com/background.mp4",
     apply: "Apply",
     preview: "Preview",
@@ -42,11 +43,11 @@ const STRINGS = {
     hideMedia: "Hide the background",
     ignoreMotion: "Keep playing",
     pauseWhenHidden: "Pause while Discord is hidden",
-    pauseWhenHiddenHint: "Saves CPU and GPU while the window is not visible.",
+    pauseWhenHiddenHint: "Saves CPU and GPU.",
     autoRecover: "Restart stalled videos",
-    autoRecoverHint: "Reloads a direct video that stops on its own, up to 3 times a minute.",
+    autoRecoverHint: "Up to 3 restarts per minute.",
     stallThreshold: "Wait before restarting",
-    stallThresholdHint: "How long a video can stall before it is reloaded.",
+    stallThresholdHint: "Seconds before retrying.",
     debug: "Debug logging",
     debugHint: "Writes playback details to the console.",
     reset: "Reset settings",
@@ -73,17 +74,18 @@ const STRINGS = {
   },
   ja: {
     mediaUrl: "背景のURL・ファイル",
-    mediaUrlHint: "動画・画像・YouTubeのURL、またはファイルの絶対パス。「ファイルを選択」でローカルの動画・画像を選べます。背景が隠れる場合はテーマ側のアプリ背景を透明にしてください。",
+    mediaUrlHint: "動画・画像・YouTubeのURL、またはローカルファイル（200MiBまで）。",
+    recentSources: "最近使った背景",
     browse: "ファイルを選択",
     localError: "ローカルファイルを読み込めません。パスと読み取り権限を確認してください。",
     fileTooLarge: "ローカルファイルは200MiB以下にしてください。",
     cacheMedia: "メディアをキャッシュ",
-    cacheMediaHint: "読み込み済みのローカルファイルをメモリで再利用。ネットの動画・画像は直近の1件（200MiBまで）を保存し、次回起動でも使います。YouTubeは対象外です。",
+    cacheMediaHint: "ネットの素材を1件保存（200MiBまで）。YouTubeは対象外。",
     clearCache: "キャッシュを削除",
     cacheCleared: "キャッシュを削除しました。表示中の背景は再生を続けます。",
     cacheError: "キャッシュを削除できませんでした。",
     transparentBackground: "Discordの背景を透明にする",
-    transparentBackgroundHint: "アプリの主要な背景と一般的なテーマの背景画像を透明にします。ポップアップやダイアログの背景は維持します。",
+    transparentBackgroundHint: "カードとダイアログの背景は残します。",
     mediaUrlPlaceholder: "https://example.com/background.mp4",
     apply: "適用",
     preview: "プレビュー",
@@ -104,11 +106,11 @@ const STRINGS = {
     hideMedia: "背景を隠す",
     ignoreMotion: "そのまま再生",
     pauseWhenHidden: "Discordが見えていないときは止める",
-    pauseWhenHiddenHint: "ウィンドウが見えていない間のCPU・GPU使用を抑えます。",
+    pauseWhenHiddenHint: "CPU・GPUの使用を抑えます。",
     autoRecover: "止まった動画を再開する",
-    autoRecoverHint: "勝手に止まった動画を読み込み直します（1分に3回まで）。",
+    autoRecoverHint: "1分に3回まで再開します。",
     stallThreshold: "再開までの待ち時間",
-    stallThresholdHint: "動画が止まってから読み込み直すまでの秒数です。",
+    stallThresholdHint: "再開までの秒数。",
     debug: "デバッグログ",
     debugHint: "再生の詳細をコンソールに出力します。",
     reset: "設定をリセット",
@@ -164,6 +166,7 @@ module.exports = class BgVideo {
       pauseWhenHidden: true,
       cacheMedia: true,
       transparentBackground: true,
+      recentSources: [],
       debug: false,
     };
 
@@ -224,6 +227,7 @@ module.exports = class BgVideo {
     if (next.respectReducedMotion !== undefined && next.reducedMotionBehavior === undefined) {
       next.reducedMotionBehavior = next.respectReducedMotion ? "pauseVideo" : "ignore";
     }
+    if (next.recentSources === undefined) next.recentSources = next.mediaUrl ? [next.mediaUrl] : [];
     return next;
   }
 
@@ -255,6 +259,9 @@ module.exports = class BgVideo {
       pauseWhenHidden: boolean("pauseWhenHidden"),
       cacheMedia: boolean("cacheMedia"),
       transparentBackground: boolean("transparentBackground"),
+      recentSources: Array.isArray(value("recentSources"))
+        ? [...new Set(value("recentSources").filter((url) => typeof url === "string").map((url) => this.normalizeMediaUrl(url)).filter((url) => this.resolveMediaSource(url)))].slice(0, 5)
+        : [],
       debug: boolean("debug"),
     };
   }
@@ -262,7 +269,7 @@ module.exports = class BgVideo {
   saveSettings(next) {
     if (!next || typeof next !== "object") return false;
     const candidate = this.sanitizeSettings({ ...this.settings, ...next });
-    const changed = Object.keys(candidate).some((key) => candidate[key] !== this.settings[key]);
+    const changed = JSON.stringify(candidate) !== JSON.stringify(this.settings);
     if (!changed) return false;
     this.settings = candidate;
     this._renderSettings = null;
@@ -271,6 +278,12 @@ module.exports = class BgVideo {
     this.applyReducedMotion();
     this.applyVisibilityState();
     return true;
+  }
+
+  rememberSource(url) {
+    if (!this.resolveMediaSource(url)) return;
+    this.settings = this.sanitizeSettings({ ...this.settings, recentSources: [url, ...this.settings.recentSources] });
+    this.persistSettings();
   }
 
   log(...args) {
@@ -927,7 +940,7 @@ module.exports = class BgVideo {
       : "";
     const surfaces = "#app-mount :is(" + [
       "[class^=app_]", "[class^=bg_]", "[class^=chat_]", "[class^=chatContent_]", "[class^=title_]",
-      "[class^=sidebar_]", "[class^=sidebarList_]", "[class^=guilds_]", "[class^=members_]", "[class^=membersWrap_]",
+      "[class^=sidebar_]", "[class^=sidebarList_]", "[class^=panels_]", "[class^=guilds_]", "[class^=members_]", "[class^=membersWrap_]",
       "[class^=privateChannels_]", "[class^=privateChannels_] [class^=scroller_]",
       "[class^=peopleColumn_]", "[class^=peopleList_]", "[class^=nowPlayingColumn_]", "[class^=tabBody_]",
       "[class^=homeContainer_]", "[class^=applicationStore_]",
@@ -1046,6 +1059,7 @@ module.exports = class BgVideo {
       BdApi.DOM.addStyle(this.PANEL_STYLE_ID, [
         ".bgv-source{display:flex;flex-direction:column;gap:8px;margin-top:8px}",
         ".bgv-source-row{display:flex;align-items:center;gap:8px}",
+        ".bgv-history{width:100%;min-width:0;padding:8px;border-radius:6px;border:1px solid var(--background-modifier-accent);background:var(--background-secondary);color:var(--text-normal)}",
         ".bgv-btn{width:auto!important;min-width:60px!important;padding:0 14px!important;flex-shrink:0}",
         ".bgv-status{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;color:var(--text-muted)}",
         ".bgv-status::before{content:\"\";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;vertical-align:middle;background:var(--text-muted)}",
@@ -1169,6 +1183,7 @@ module.exports = class BgVideo {
     const h = React.createElement;
     const { Button } = BdApi.Components;
     const [draft, setDraft] = React.useState(this.settings.mediaUrl);
+    const [recentSources, setRecentSources] = React.useState(this.settings.recentSources);
     const fileInput = React.useRef(null);
     const status = this.useStatus();
     const url = this.normalizeMediaUrl(draft);
@@ -1182,7 +1197,11 @@ module.exports = class BgVideo {
       }
       this.saveSettings({ mediaUrl: url });
       this._renderSettings = null;
-      if (await this.updateMediaSource({ notify: true })) this.toast(this.t("applied"), "success");
+      if (await this.updateMediaSource({ notify: true })) {
+        this.rememberSource(url);
+        setRecentSources(this.settings.recentSources);
+        this.toast(this.t("applied"), "success");
+      }
       else if (!url) this.toast(this.t("removed"), "success");
     };
     const preview = () => {
@@ -1191,6 +1210,14 @@ module.exports = class BgVideo {
     const text = invalid ? this.t("invalidUrl") : this.statusText(status);
 
     return h("div", { className: "bgv-source", onPaste: (event) => event.stopPropagation() },
+      recentSources.length > 0 && h("select", {
+        className: "bgv-history", "aria-label": this.t("recentSources"),
+        value: "",
+        onChange: (event) => setDraft(event.currentTarget.value),
+      },
+        h("option", { value: "", disabled: true }, this.t("recentSources")),
+        ...recentSources.map((url) => h("option", { key: url, value: url }, url)),
+      ),
       h("input", {
         type: "file", ref: fileInput, hidden: true,
         accept: Object.keys(MEDIA_TYPES).map((extension) => "." + extension).join(","),

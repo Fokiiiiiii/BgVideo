@@ -28,12 +28,68 @@ function setup(t, options = {}) {
   const context = {
     module, require: (name) => name === "fs" ? bdFs : name === "path" ? options.pathModule || path : name === "electron" && options.electron ? options.electron : require(name), BdApi,
     URL, Blob, AbortController, Uint8Array, setTimeout, clearTimeout, console,
-    document: { documentElement: { lang: "en" }, getElementById() { return null; } },
+    document: { documentElement: { lang: options.lang || "en" }, getElementById() { return null; } },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../BgVideo.plugin.js"), "utf8"), context);
   const plugin = new module.exports();
-  return { plugin, folder, BdApi, reads: () => reads, fetches: () => fetches };
+  return { plugin, folder, BdApi, strings: vm.runInNewContext("STRINGS", context), reads: () => reads, fetches: () => fetches };
 }
+
+test("Japanese and English cover every displayed string", (t) => {
+  const { plugin, strings } = setup(t, { lang: "ja" });
+  assert.deepEqual(Object.keys(strings.ja).sort(), Object.keys(strings.en).sort());
+  for (const key of Object.keys(strings.en)) {
+    assert.equal(typeof strings.en[key], "string", key);
+    assert.equal(typeof strings.ja[key], "string", key);
+    assert.ok(strings.en[key] && strings.ja[key], key);
+  }
+  assert.equal(plugin.t("apply"), "適用");
+  const { plugin: english } = setup(t, { lang: "en-US" });
+  assert.equal(english.t("apply"), "Apply");
+  const { plugin: fallback } = setup(t, { lang: "fr" });
+  assert.equal(fallback.t("apply"), "Apply");
+});
+
+test("recent sources are validated, deduplicated, bounded and persisted", (t) => {
+  const { plugin, BdApi, folder } = setup(t);
+  let saved;
+  BdApi.Data.save = (_name, _key, value) => { saved = value; };
+  const source = (i) => "https://example.com/" + i + ".mp4";
+  for (let i = 0; i < 7; i++) plugin.rememberSource(source(i));
+  assert.deepEqual(Array.from(plugin.settings.recentSources), [6, 5, 4, 3, 2].map(source));
+  plugin.rememberSource(source(4));
+  assert.deepEqual(Array.from(plugin.settings.recentSources), [4, 6, 5, 3, 2].map(source));
+  plugin.rememberSource("javascript:bad.mp4");
+  plugin.rememberSource("");
+  assert.equal(plugin.settings.recentSources.length, 5);
+  const local = path.join(folder, "video.mp4");
+  plugin.rememberSource(local);
+  assert.equal(saved.recentSources[0], local);
+  BdApi.Data.load = () => saved;
+  const fresh = new plugin.constructor();
+  assert.deepEqual(Array.from(fresh.settings.recentSources), Array.from(saved.recentSources));
+  assert.equal(fresh.sanitizeSettings({ recentSources: "bad" }).recentSources.length, 0);
+});
+
+test("selecting a recent source fills the draft without applying or saving", (t) => {
+  const { plugin, BdApi } = setup(t);
+  plugin.settings.recentSources = ["https://example.com/one.mp4", "https://example.com/two.webm"];
+  let draft;
+  let saves = 0;
+  BdApi.Data.save = () => saves++;
+  BdApi.React = {
+    createElement: (type, props, ...children) => ({ type, props, children }),
+    useState: (initial) => [initial, (value) => { draft = value; }],
+    useRef: () => ({ current: null }),
+  };
+  BdApi.Components = { Button: { Looks: {}, Colors: {}, Sizes: {} } };
+  plugin.useStatus = () => ({ type: "idle", detail: "" });
+  const history = plugin.renderSourceEditor().children.find((child) => child.type === "select");
+  history.props.onChange({ currentTarget: { value: plugin.settings.recentSources[1] } });
+  assert.equal(draft, "https://example.com/two.webm");
+  assert.equal(plugin.settings.mediaUrl, "");
+  assert.equal(saves, 0);
+});
 
 test("absolute paths and file URLs resolve without allowing arbitrary schemes", (t) => {
   const { plugin, folder } = setup(t);
