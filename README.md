@@ -45,10 +45,6 @@ BgVideo places the media behind Discord and makes the page background transparen
 - YouTube embeds are sized to just cover the window, so YouTube does not pick a larger stream than needed.
 - A 1080p video is usually enough for a background; 4K files take much more decoding work.
 
-## Updates
-
-The plugin includes BetterDiscord updater metadata. Automatic detection depends on the plugin being available in the BetterDiscord Store. Until then, replace the file with the latest version from the Raw URL above.
-
 ## Limitations
 
 - URLs must use HTTP(S) and a supported media type. URLs with embedded usernames or passwords are rejected; use a signed query URL instead.
