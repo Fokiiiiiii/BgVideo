@@ -3,15 +3,25 @@
  * @author Fokiiiiiii
  * @authorLink https://github.com/Fokiiiiiii
  * @description Plays a looping video, image, or YouTube embed behind the Discord interface.
- * @version 1.2.0
+ * @version 1.3.0
  * @source https://github.com/Fokiiiiiii/BgVideo
  * @updateUrl https://raw.githubusercontent.com/Fokiiiiiii/BgVideo/main/BgVideo.plugin.js
  */
 
 const STRINGS = {
   en: {
-    mediaUrl: "Background URL",
-    mediaUrlHint: "A direct link to an MP4, WebM, or image file, or a YouTube video or playlist. If your theme covers the background, make the theme's app background transparent.",
+    mediaUrl: "Background URL or file",
+    mediaUrlHint: "A direct media URL, YouTube URL, or absolute file path. Choose a local video or image with Browse. Make your theme's app background transparent if it covers the background.",
+    browse: "Browse",
+    localError: "Could not read the local media file. Check the path and permissions.",
+    fileTooLarge: "Local files must be 200 MiB or smaller.",
+    cacheMedia: "Cache media",
+    cacheMediaHint: "Reuse loaded local files in memory. Save the most recent direct media download (up to 200 MiB) for the next launch. YouTube is not cached.",
+    clearCache: "Clear cache",
+    cacheCleared: "Cache cleared. The current background keeps playing.",
+    cacheError: "Could not clear the media cache.",
+    transparentBackground: "Make Discord's background transparent",
+    transparentBackgroundHint: "Clear the main app surfaces and common theme background images. Message popups and dialogs keep their backgrounds.",
     mediaUrlPlaceholder: "https://example.com/background.mp4",
     apply: "Apply",
     preview: "Preview",
@@ -52,7 +62,7 @@ const STRINGS = {
     video: "Video",
     image: "Image",
     youtubeMedia: "YouTube",
-    invalidUrl: "Unsupported URL. Use an http(s) link to a video, an image, or YouTube.",
+    invalidUrl: "Use an http(s) media or YouTube URL, or an absolute path to a supported video or image.",
     noSource: "Enter a URL and press Apply.",
     videoError: "The video failed to load.",
     imageError: "The image failed to load.",
@@ -62,8 +72,18 @@ const STRINGS = {
     resetDone: "Settings reset.",
   },
   ja: {
-    mediaUrl: "背景のURL",
-    mediaUrlHint: "MP4・WebM・画像ファイルへの直接リンク、またはYouTubeの動画・再生リスト。テーマで背景が隠れる場合は、テーマ側でアプリの背景を透明にしてください。",
+    mediaUrl: "背景のURL・ファイル",
+    mediaUrlHint: "動画・画像・YouTubeのURL、またはファイルの絶対パス。「ファイルを選択」でローカルの動画・画像を選べます。背景が隠れる場合はテーマ側のアプリ背景を透明にしてください。",
+    browse: "ファイルを選択",
+    localError: "ローカルファイルを読み込めません。パスと読み取り権限を確認してください。",
+    fileTooLarge: "ローカルファイルは200MiB以下にしてください。",
+    cacheMedia: "メディアをキャッシュ",
+    cacheMediaHint: "読み込み済みのローカルファイルをメモリで再利用。ネットの動画・画像は直近の1件（200MiBまで）を保存し、次回起動でも使います。YouTubeは対象外です。",
+    clearCache: "キャッシュを削除",
+    cacheCleared: "キャッシュを削除しました。表示中の背景は再生を続けます。",
+    cacheError: "キャッシュを削除できませんでした。",
+    transparentBackground: "Discordの背景を透明にする",
+    transparentBackgroundHint: "アプリの主要な背景と一般的なテーマの背景画像を透明にします。ポップアップやダイアログの背景は維持します。",
     mediaUrlPlaceholder: "https://example.com/background.mp4",
     apply: "適用",
     preview: "プレビュー",
@@ -104,7 +124,7 @@ const STRINGS = {
     video: "動画",
     image: "画像",
     youtubeMedia: "YouTube",
-    invalidUrl: "対応していないURLです。動画・画像・YouTubeのhttp(s)リンクを入力してください。",
+    invalidUrl: "動画・画像・YouTubeのhttp(s)リンク、または対応する動画・画像ファイルの絶対パスを入力してください。",
     noSource: "URLを入力して「適用」を押してください。",
     videoError: "動画を読み込めませんでした。",
     imageError: "画像を読み込めませんでした。",
@@ -114,6 +134,13 @@ const STRINGS = {
     resetDone: "設定をリセットしました。",
   },
 };
+
+const MEDIA_TYPES = {
+  mp4: "video/mp4", webm: "video/webm", ogv: "video/ogg", ogg: "video/ogg",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", avif: "image/avif", bmp: "image/bmp",
+};
+const MAX_MEDIA_BYTES = 200 * 1024 * 1024;
 
 module.exports = class BgVideo {
   constructor() {
@@ -135,6 +162,8 @@ module.exports = class BgVideo {
       autoRecoverPlayback: true,
       stallThresholdSeconds: 5,
       pauseWhenHidden: true,
+      cacheMedia: true,
+      transparentBackground: true,
       debug: false,
     };
 
@@ -142,6 +171,9 @@ module.exports = class BgVideo {
 
     this._mediaNode = null;
     this._mediaSource = null;
+    this._mediaBlob = null;
+    this._loadController = null;
+    this._cacheRevision = 0;
     this._renderSettings = null;
     this._cssText = "";
     this._panelCssMounted = false;
@@ -221,6 +253,8 @@ module.exports = class BgVideo {
       autoRecoverPlayback: boolean("autoRecoverPlayback"),
       stallThresholdSeconds: clamp("stallThresholdSeconds", 1, 30),
       pauseWhenHidden: boolean("pauseWhenHidden"),
+      cacheMedia: boolean("cacheMedia"),
+      transparentBackground: boolean("transparentBackground"),
       debug: boolean("debug"),
     };
   }
@@ -336,6 +370,21 @@ module.exports = class BgVideo {
     const url = this.normalizeMediaUrl(input);
     if (!url) return null;
 
+    let localPath = url;
+    if (/^file:/i.test(url)) {
+      try {
+        const file = new URL(url);
+        if (file.protocol !== "file:" || (file.hostname && file.hostname !== "localhost") || file.search || file.hash) return null;
+        localPath = decodeURIComponent(file.pathname);
+        if (require("path").sep === "\\") localPath = localPath.replace(/^\/([A-Za-z]:)/, "$1").replace(/\//g, "\\");
+      } catch { return null; }
+    }
+    if (require("path").isAbsolute(localPath)) {
+      const extension = require("path").extname(localPath).slice(1).toLowerCase();
+      const mime = MEDIA_TYPES[extension];
+      return typeof mime === "string" ? { type: mime.split("/")[0], url, path: localPath, mime } : null;
+    }
+
     const parsed = this.parseHttpUrl(url);
     if (!parsed) return null;
 
@@ -345,11 +394,110 @@ module.exports = class BgVideo {
       return { type: "youtube", url, videoId, playlistId };
     }
     const extension = this.getMediaExtension(parsed);
-    const videoExtensions = ["mp4", "webm", "ogv", "ogg"];
-    const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
-    if (videoExtensions.includes(extension)) return { type: "video", url };
-    if (imageExtensions.includes(extension)) return { type: "image", url };
+    const mime = MEDIA_TYPES[extension];
+    if (typeof mime === "string") return { type: mime.split("/")[0], url, mime };
     return null;
+  }
+
+  mediaCachePath(name) {
+    return require("path").join(BdApi.Plugins.folder, "BgVideo-cache", name);
+  }
+
+  releaseMediaBlob() {
+    if (this._mediaBlob) URL.revokeObjectURL(this._mediaBlob.url);
+    this._mediaBlob = null;
+  }
+
+  clearMediaCache() {
+    this._cacheRevision++;
+    const fs = require("fs");
+    for (const name of ["source.json", "media.bin"]) {
+      const file = this.mediaCachePath(name);
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
+    // Keep the active URL alive until its renderer is removed, but do not reuse it.
+    if (this._mediaBlob) this._mediaBlob.key = null;
+  }
+
+  async loadMedia(source, signal) {
+    const fs = require("fs");
+    const cacheRevision = this._cacheRevision;
+    if (source.path) {
+      const stat = fs.statSync(source.path);
+      if (!stat.isFile() || !stat.size) throw new Error(this.t("localError"));
+      if (stat.size > MAX_MEDIA_BYTES) throw new Error(this.t("fileTooLarge"));
+      const key = source.path + ":" + stat.size + ":" + stat.mtimeMs;
+      if (this.settings.cacheMedia && this._mediaBlob?.key === key) return this._mediaBlob;
+      this.releaseMediaBlob();
+      // BetterDiscord's fs defaults to UTF-8; null preserves the binary bytes.
+      const bytes = fs.readFileSync(source.path, null);
+      if (!ArrayBuffer.isView(bytes) || bytes.byteLength !== stat.size) throw new Error(this.t("localError"));
+      return { key, blob: new Blob([bytes], { type: source.mime }) };
+    }
+
+    if (this.settings.cacheMedia && this._mediaBlob?.key === source.url) return this._mediaBlob;
+    this.releaseMediaBlob();
+    if (!this.settings.cacheMedia) return { url: source.url };
+
+    try {
+      const metadata = JSON.parse(fs.readFileSync(this.mediaCachePath("source.json"), "utf8"));
+      const stat = fs.statSync(this.mediaCachePath("media.bin"));
+      if (metadata.url === source.url && stat.size === metadata.size && stat.size > 0 && stat.size <= MAX_MEDIA_BYTES) {
+        const bytes = fs.readFileSync(this.mediaCachePath("media.bin"), null);
+        if (ArrayBuffer.isView(bytes) && bytes.byteLength === stat.size) {
+          return { key: source.url, blob: new Blob([bytes], { type: source.mime }) };
+        }
+      }
+    } catch (error) { this.log("No usable disk cache", error); }
+
+    const download = new AbortController();
+    const abortDownload = () => download.abort();
+    signal.addEventListener("abort", abortDownload, { once: true });
+    if (signal.aborted) download.abort();
+    try {
+      const response = await BdApi.Net.fetch(source.url, { signal: download.signal, timeout: 30000 });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      if (Number(response.headers.get("content-length")) > MAX_MEDIA_BYTES || /^text\//i.test(response.headers.get("content-type") || "")) {
+        download.abort();
+        await response.body?.cancel();
+        return { url: source.url };
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (signal.aborted || size > MAX_MEDIA_BYTES) {
+            download.abort();
+            await reader.cancel();
+            return { url: source.url };
+          }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+      if (signal.aborted || !size) return { url: source.url };
+      const blob = new Blob(chunks, { type: source.mime });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (signal.aborted) return { url: source.url };
+      if (!this.settings.cacheMedia || cacheRevision !== this._cacheRevision) return { key: null, blob };
+      try {
+        fs.mkdirSync(this.mediaCachePath(""), { recursive: true });
+        // Invalidate metadata before replacing bytes so interrupted writes cannot hit an old URL.
+        fs.writeFileSync(this.mediaCachePath("source.json"), "null");
+        fs.writeFileSync(this.mediaCachePath("media.bin"), bytes);
+        fs.writeFileSync(this.mediaCachePath("source.json"), JSON.stringify({ url: source.url, size }));
+      } catch (error) { this.log("Could not save disk cache", error); }
+      return { key: source.url, blob };
+    } catch (error) {
+      this.log("Cache download failed; using direct media URL", error);
+      return { url: source.url };
+    } finally {
+      signal.removeEventListener("abort", abortDownload);
+      download.abort();
+    }
   }
 
   validateMediaUrl(input) {
@@ -491,7 +639,9 @@ module.exports = class BgVideo {
     this._recoveryTimer = null;
   }
 
-  destroyRenderer() {
+  destroyRenderer(keepBlob = false) {
+    this._loadController?.abort();
+    this._loadController = null;
     this.clearRecoveryTimer();
     this._recoveryAttempts = 0;
     this._recoveryWindowStartedAt = 0;
@@ -502,13 +652,13 @@ module.exports = class BgVideo {
     const node = this._mediaNode;
     this._mediaNode = null;
     this._mediaSource = null;
-    if (!node) return;
-    if (node.tagName === "VIDEO") {
+    if (node?.tagName === "VIDEO") {
       try { node.pause(); } catch {}
       node.removeAttribute("src");
       try { node.load(); } catch {}
     }
-    node.remove?.();
+    node?.remove?.();
+    if (!keepBlob) this.releaseMediaBlob();
   }
 
   createMediaContainer() {
@@ -523,12 +673,14 @@ module.exports = class BgVideo {
     return wrapper;
   }
 
-  updateMediaSource(options = {}) {
+  async updateMediaSource(options = {}) {
     const settings = this.sanitizeSettings(options.settings || this.settings);
     const sourceUrl = settings.mediaUrl;
 
     if (!sourceUrl) {
       this.destroyRenderer();
+      BdApi.DOM.removeStyle(this.PLUGIN_NAME);
+      this._cssText = "";
       this._renderSettings = settings;
       this.setStatus("idle", this.t("noSource"));
       return false;
@@ -541,18 +693,37 @@ module.exports = class BgVideo {
       return false;
     }
 
-    this.destroyRenderer();
+    this.destroyRenderer(true);
+    const controller = new AbortController();
+    this._loadController = controller;
     this._renderSettings = settings;
     this.setStatus("loading", this.mediaTypeLabel(source.type));
+    this.applyVisualSettings(settings);
+    let media;
+    try {
+      if (source.type === "youtube") this.releaseMediaBlob();
+      else media = await this.loadMedia(source, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) return false;
+      const message = error.message === this.t("fileTooLarge") ? error.message : this.t("localError");
+      this.setStatus("error", message);
+      if (options.notify !== false) this.toast(message, "error");
+      return false;
+    }
+    if (controller.signal.aborted) return false;
+    if (media?.blob) {
+      this._mediaBlob = { key: media.key, url: URL.createObjectURL(media.blob) };
+      media = this._mediaBlob;
+    }
     const wrapper = this.createMediaContainer();
     let node;
 
     if (source.type === "youtube") {
       node = this.createYouTubeRenderer(source, settings);
     } else if (source.type === "video") {
-      node = this.createVideoRenderer(source.url, settings);
+      node = this.createVideoRenderer(media.url, settings);
     } else {
-      node = this.createImageRenderer(source.url);
+      node = this.createImageRenderer(media.url);
     }
 
     this._mediaNode = node;
@@ -564,9 +735,6 @@ module.exports = class BgVideo {
     this.applyVisibilityState();
     this._reassertNoControls();
 
-    if (source.type === "image") {
-      this.setStatus("ready", this.mediaTypeLabel(source.type));
-    }
     if (options.preview) this.setStatus("preview", this.mediaTypeLabel(source.type));
     this.log("Loaded " + source.type + " source");
     return true;
@@ -574,6 +742,15 @@ module.exports = class BgVideo {
 
   mediaTypeLabel(type) {
     return type === "youtube" ? this.t("youtubeMedia") : type === "image" ? this.t("image") : this.t("video");
+  }
+
+  retryUncached(node) {
+    if (node !== this._mediaNode || !this._mediaBlob || this._mediaSource?.path) return false;
+    try { this.clearMediaCache(); } catch (error) { this.log("Could not invalidate disk cache", error); }
+    node.src = this._mediaSource.url;
+    this.releaseMediaBlob();
+    this.setStatus("loading", this.mediaTypeLabel(this._mediaSource.type));
+    return true;
   }
 
   createVideoRenderer(src, settings) {
@@ -594,10 +771,12 @@ module.exports = class BgVideo {
     video.src = src;
 
     video.addEventListener("loadeddata", () => {
+      if (video !== this._mediaNode) return;
       this.clearRecoveryTimer();
       this.setStatus("ready", this.mediaTypeLabel("video"));
     });
     video.addEventListener("playing", () => {
+      if (video !== this._mediaNode) return;
       this.clearRecoveryTimer();
       this._recoveryAttempts = 0;
       this._recoveryWindowStartedAt = 0;
@@ -617,6 +796,7 @@ module.exports = class BgVideo {
     video.addEventListener("waiting", () => this.scheduleVideoRecovery(video));
     video.addEventListener("stalled", () => this.scheduleVideoRecovery(video));
     video.addEventListener("error", () => {
+      if (video !== this._mediaNode || this.retryUncached(video)) return;
       this.setStatus("error", this.t("videoError"));
       this.scheduleVideoRecovery(video, true);
     });
@@ -631,8 +811,11 @@ module.exports = class BgVideo {
     image.draggable = false;
     image.tabIndex = -1;
     image.setAttribute("aria-hidden", "true");
-    image.addEventListener("load", () => this.setStatus("ready", this.mediaTypeLabel("image")));
+    image.addEventListener("load", () => {
+      if (image === this._mediaNode) this.setStatus("ready", this.mediaTypeLabel("image"));
+    });
     image.addEventListener("error", () => {
+      if (image !== this._mediaNode || this.retryUncached(image)) return;
       this.setStatus("error", this.t("imageError"));
       this.toast(this.t("imageError"), "error");
     });
@@ -667,7 +850,9 @@ module.exports = class BgVideo {
       params.set("playlist", source.videoId);
     }
     iframe.src = "https://www.youtube.com/embed/" + path + "?" + params.toString();
-    iframe.addEventListener("load", () => this.setStatus("ready", this.mediaTypeLabel("youtube")));
+    iframe.addEventListener("load", () => {
+      if (iframe === this._mediaNode) this.setStatus("ready", this.mediaTypeLabel("youtube"));
+    });
     return iframe;
   }
 
@@ -740,13 +925,28 @@ module.exports = class BgVideo {
     const iframeCover = settings.objectFit === "cover"
       ? "inset:auto;left:50%;top:50%;width:max(100vw,177.78vh);height:max(100vh,56.25vw);transform:translate(-50%,-50%);"
       : "";
+    const surfaces = "#app-mount :is(" + [
+      "[class^=app_]", "[class^=bg_]", "[class^=chat_]", "[class^=chatContent_]", "[class^=title_]",
+      "[class^=sidebar_]", "[class^=sidebarList_]", "[class^=guilds_]", "[class^=members_]", "[class^=membersWrap_]",
+      "[class^=privateChannels_]", "[class^=privateChannels_] [class^=scroller_]",
+      "[class^=peopleColumn_]", "[class^=peopleList_]", "[class^=nowPlayingColumn_]", "[class^=tabBody_]",
+      "[class^=homeContainer_]", "[class^=applicationStore_]",
+      "[class^=userPanelOuter_]", "[class^=userPanelInner_]", "[class^=userPanel_]", "[class^=profilePanel_]",
+      "[class^=container_][class*=themed_]", "[class^=chat_] > [class^=header_]",
+      "nav[class^=container_]", "main[class^=container_]",
+      "[class^=container_]:has(>[class^=membersWrap_])", "[class^=container_]:has(>[class^=tabBody_])",
+      "[class^=scrollerInner_] > [class^=wrapper_]", "[class^=scrollerInner_] > [class^=wrapper_] > [class^=wrapper_]",
+    ].join(",") + "):not([role=dialog], [role=dialog] *, .bd-modal-root, .bd-modal-root *)";
     return [
       "#bgVideo-wrapper{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none!important;z-index:0!important;overflow:hidden;}",
       "#bgVideo-media{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:" + settings.objectFit + ";object-position:" + settings.objectPosition + ";pointer-events:none!important;visibility:visible!important;}",
       "iframe#bgVideo-media{" + iframeCover + "}",
       "video#bgVideo-media::-webkit-media-controls,video#bgVideo-media::-webkit-media-controls-enclosure,video#bgVideo-media::-webkit-media-controls-panel,video#bgVideo-media::-webkit-media-controls-play-button,video#bgVideo-media::-webkit-media-controls-start-playback-button{display:none!important;opacity:0!important;pointer-events:none!important;-webkit-appearance:none!important;}",
-      "html,body{background:transparent!important;background-image:none!important;}",
-      "#app-mount{position:relative!important;z-index:1!important;background:transparent!important;background-image:none!important;--background-image:none!important;--background-shading:transparent!important;--hsl-background-shading:transparent!important;--background-shading-percent:0%!important;}",
+      "#app-mount{position:relative!important;z-index:1!important;}",
+      ...(settings.transparentBackground ? [
+        "html,body,#app-mount{background:transparent!important;background-image:none!important;}",
+        surfaces + "," + surfaces + "::before," + surfaces + "::after{background:transparent!important;background-image:none!important;}",
+      ] : []),
     ].join("");
   }
 
@@ -890,6 +1090,7 @@ module.exports = class BgVideo {
             slider("blur", settings.blur, 0, 20, 0.1, "px", [0, 5, 10, 15, 20], "blurHint"),
             slider("brightness", percent("brightness"), 0, 200, 1, "%", [0, 50, 100, 150, 200]),
             slider("saturate", percent("saturate"), 0, 300, 1, "%", [0, 100, 200, 300]),
+            toggle("transparentBackground", "transparentBackground", "transparentBackgroundHint"),
           ],
         },
         {
@@ -917,6 +1118,15 @@ module.exports = class BgVideo {
             toggle("autoRecoverPlayback", "autoRecover", "autoRecoverHint"),
             { ...slider("stallThresholdSeconds", settings.stallThresholdSeconds, 1, 30, 1, "s", [1, 10, 20, 30], "stallThresholdHint"), name: t("stallThreshold") },
             toggle("debug", "debug", "debugHint"),
+            toggle("cacheMedia", "cacheMedia", "cacheMediaHint"),
+            {
+              type: "button", id: "clearCache", name: t("clearCache"), children: t("clearCache"),
+              className: "bgv-btn", size: Button.Sizes.SMALL, grow: false,
+              onClick: () => {
+                try { this.clearMediaCache(); this.toast(t("cacheCleared"), "success"); }
+                catch { this.toast(t("cacheError"), "error"); }
+              },
+            },
             {
               type: "button",
               id: "reset",
@@ -940,7 +1150,10 @@ module.exports = class BgVideo {
     if (id === "opacity" || id === "brightness" || id === "saturate") this.setLiveSetting(id, value / 100, true);
     else if (id === "blur") this.setLiveSetting(id, value, true);
     else if (id === "stallThresholdSeconds") this.setLiveSetting(id, value, false);
-    else if (Object.prototype.hasOwnProperty.call(this.defaults, id)) this.saveSettings({ [id]: value });
+    else if (Object.prototype.hasOwnProperty.call(this.defaults, id)) {
+      this.saveSettings({ [id]: value });
+      if (id === "transparentBackground") this.applyVisualSettings();
+    }
   }
 
   setLiveSetting(key, value, visual) {
@@ -954,19 +1167,20 @@ module.exports = class BgVideo {
     const h = React.createElement;
     const { Button } = BdApi.Components;
     const [draft, setDraft] = React.useState(this.settings.mediaUrl);
+    const fileInput = React.useRef(null);
     const status = this.useStatus();
     const url = this.normalizeMediaUrl(draft);
     const source = url ? this.resolveMediaSource(url) : null;
     const invalid = !!url && !source;
 
-    const apply = () => {
+    const apply = async () => {
       if (invalid) {
         this.toast(this.t("invalidUrl"), "error");
         return;
       }
       this.saveSettings({ mediaUrl: url });
       this._renderSettings = null;
-      if (this.updateMediaSource({ notify: true })) this.toast(this.t("applied"), "success");
+      if (await this.updateMediaSource({ notify: true })) this.toast(this.t("applied"), "success");
       else if (!url) this.toast(this.t("removed"), "success");
     };
     const preview = () => {
@@ -975,6 +1189,20 @@ module.exports = class BgVideo {
     const text = invalid ? this.t("invalidUrl") : this.statusText(status);
 
     return h("div", { className: "bgv-source", onPaste: (event) => event.stopPropagation() },
+      h("input", {
+        type: "file", ref: fileInput, hidden: true,
+        accept: Object.keys(MEDIA_TYPES).map((extension) => "." + extension).join(","),
+        onChange: (event) => {
+          const file = event.currentTarget.files[0];
+          event.currentTarget.value = "";
+          if (!file) return;
+          try {
+            const path = require("electron").webUtils.getPathForFile(file);
+            if (!path || !this.resolveMediaSource(path)) throw new Error("Unsupported file");
+            setDraft(path);
+          } catch { this.toast(this.t("localError"), "error"); }
+        },
+      }),
       h("input", {
         className: "bd-text-input",
         type: "text",
@@ -1002,6 +1230,7 @@ module.exports = class BgVideo {
         }, this.t("preview")),
         h(Button, { className: "bgv-btn", size: Button.Sizes.SMALL, grow: false, disabled: invalid, onClick: apply }, this.t("apply")),
       ),
+      h(Button, { className: "bgv-btn", style: { alignSelf: "flex-start" }, size: Button.Sizes.SMALL, grow: false, onClick: () => fileInput.current?.click() }, this.t("browse")),
     );
   }
 
@@ -1010,11 +1239,11 @@ module.exports = class BgVideo {
       danger: true,
       confirmText: this.t("resetButton"),
       cancelText: this.t("cancel"),
-      onConfirm: () => {
+      onConfirm: async () => {
         this.settings = this.sanitizeSettings(this.defaults);
         this.persistSettings();
         this._renderSettings = null;
-        this.updateMediaSource();
+        await this.updateMediaSource();
         remount();
         this.toast(this.t("resetDone"), "success");
       },
